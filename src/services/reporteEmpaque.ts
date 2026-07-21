@@ -52,35 +52,116 @@ const esperarImagenes = async (element: HTMLElement) => {
   )
 }
 
+type Snapshot = {
+  node: HTMLElement
+  style: {
+    overflow: string
+    width: string
+    maxWidth: string
+    minWidth: string
+  }
+  scrollLeft: number
+}
+
+const capturarEstilo = (node: HTMLElement): Snapshot => ({
+  node,
+  style: {
+    overflow: node.style.overflow,
+    width: node.style.width,
+    maxWidth: node.style.maxWidth,
+    minWidth: node.style.minWidth,
+  },
+  scrollLeft: node.scrollLeft,
+})
+
+const restaurarEstilos = (snapshots: Snapshot[]) => {
+  snapshots.forEach(({ node, style, scrollLeft }) => {
+    node.style.overflow = style.overflow
+    node.style.width = style.width
+    node.style.maxWidth = style.maxWidth
+    node.style.minWidth = style.minWidth
+    node.scrollLeft = scrollLeft
+  })
+}
+
+const expandirParaCaptura = (element: HTMLElement) => {
+  const snapshots: Snapshot[] = []
+  snapshots.push(capturarEstilo(element))
+  element.style.overflow = 'visible'
+  element.style.maxWidth = 'none'
+
+  const wrappers = Array.from(element.querySelectorAll<HTMLElement>('.tabla-excel-wrap'))
+  wrappers.forEach((wrapper) => {
+    snapshots.push(capturarEstilo(wrapper))
+    wrapper.style.overflow = 'visible'
+    wrapper.style.width = 'max-content'
+    wrapper.style.maxWidth = 'none'
+    wrapper.style.minWidth = '0'
+    wrapper.scrollLeft = 0
+  })
+
+  const tablas = Array.from(element.querySelectorAll<HTMLElement>('.tabla-excel'))
+  tablas.forEach((tabla) => {
+    snapshots.push(capturarEstilo(tabla))
+    tabla.style.width = 'max-content'
+    tabla.style.maxWidth = 'none'
+    tabla.style.minWidth = '100%'
+  })
+
+  const computed = window.getComputedStyle(element)
+  const paddingX = Number.parseFloat(computed.paddingLeft || '0') + Number.parseFloat(computed.paddingRight || '0')
+  const borderX = Number.parseFloat(computed.borderLeftWidth || '0') + Number.parseFloat(computed.borderRightWidth || '0')
+
+  const anchoTablas = Math.max(
+    0,
+    ...tablas.map((tabla) => tabla.scrollWidth),
+    ...wrappers.map((wrapper) => wrapper.scrollWidth),
+  )
+
+  if (anchoTablas > 0) {
+    element.style.width = `${Math.ceil(anchoTablas + paddingX + borderX)}px`
+  }
+
+  return () => restaurarEstilos(snapshots)
+}
+
 const capturarCanvasCompleto = async (element: HTMLElement, scale = 3) => {
   if ('fonts' in document) {
     await (document as Document & { fonts: FontFaceSet }).fonts.ready
   }
 
+  const restaurar = expandirParaCaptura(element)
+
   await esperarImagenes(element)
   await esperarSiguienteFrame()
+  await esperarSiguienteFrame()
 
-  const width = Math.ceil(element.scrollWidth)
-  const height = Math.ceil(element.scrollHeight)
+  const width = Math.ceil(Math.max(element.scrollWidth, element.offsetWidth))
+  const height = Math.ceil(Math.max(element.scrollHeight, element.offsetHeight))
 
-  return html2canvas(element, {
-    backgroundColor: '#ffffff',
-    scale,
-    useCORS: true,
-    allowTaint: false,
-    logging: false,
-    width,
-    height,
-    windowWidth: width,
-    windowHeight: height,
-    scrollX: 0,
-    scrollY: 0,
-    ignoreElements: (node) => !filterNoButtons(node),
-  })
+  try {
+    return await html2canvas(element, {
+      backgroundColor: '#ffffff',
+      scale,
+      useCORS: true,
+      allowTaint: false,
+      logging: false,
+      width,
+      height,
+      windowWidth: width,
+      windowHeight: height,
+      scrollX: 0,
+      scrollY: 0,
+      ignoreElements: (node) => !filterNoButtons(node),
+    })
+  } finally {
+    restaurar()
+  }
 }
 
 export const exportarReporteEmpaquePNG = async (element: HTMLElement, fileName: string) => {
-  const canvas = await capturarCanvasCompleto(element, 3)
+  const scale = Math.max(3, Math.min(5, window.devicePixelRatio || 1))
+  const canvas = await capturarCanvasCompleto(element, scale)
   const dataUrl = canvas.toDataURL('image/png', 1)
   const link = document.createElement('a')
   link.href = dataUrl
@@ -89,7 +170,8 @@ export const exportarReporteEmpaquePNG = async (element: HTMLElement, fileName: 
 }
 
 export const exportarReporteEmpaqueJPG = async (element: HTMLElement, fileName: string) => {
-  const canvas = await capturarCanvasCompleto(element, 3)
+  const scale = Math.max(3, Math.min(5, window.devicePixelRatio || 1))
+  const canvas = await capturarCanvasCompleto(element, scale)
   const dataUrl = canvas.toDataURL('image/jpeg', 0.98)
   const link = document.createElement('a')
   link.href = dataUrl
@@ -98,7 +180,8 @@ export const exportarReporteEmpaqueJPG = async (element: HTMLElement, fileName: 
 }
 
 export const exportarReporteEmpaquePDF = async (element: HTMLElement, fileName: string) => {
-  const sourceCanvas = await capturarCanvasCompleto(element, 3)
+  const scale = Math.max(3, Math.min(5, window.devicePixelRatio || 1))
+  const sourceCanvas = await capturarCanvasCompleto(element, scale)
   const image = sourceCanvas.toDataURL('image/png', 1)
 
   const pdf = new jsPDF('p', 'mm', 'a4')

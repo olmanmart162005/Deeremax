@@ -11,13 +11,15 @@ export type PayloadProductor = {
   activo: boolean
 }
 
+const normalizarNombreProductor = (value: string) => value.trim().replace(/\s+/g, ' ').toUpperCase()
+
 export const estaActivo = (productor: Productor) => {
   if (typeof productor.activo === 'boolean') return productor.activo
   return true
 }
 
 export const guardarProductor = async (productorId: string | null, payload: PayloadProductor) => {
-  const nombre = payload.nombre.trim().toUpperCase()
+  const nombre = normalizarNombreProductor(payload.nombre)
 
   const basePayload = {
     codigo: payload.codigo,

@@ -1098,10 +1098,25 @@ tbody tr:nth-child(even):hover {
 }
 
 .tabla-excel thead th {
-  background: #53b335;
+  background: #58b535;
   color: #000;
-  border-color: #000;
+  border: 2px solid #111;
   font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.015em;
+  line-height: 1.05;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.tabla-excel-head-l1 th {
+  font-size: 0.9rem;
+  padding: 7px 6px;
+}
+
+.tabla-excel-head-l2 th {
+  font-size: 0.82rem;
+  padding: 6px 6px;
 }
 
 .tabla-excel-wrap {
@@ -1131,9 +1146,12 @@ tbody tr:nth-child(even):hover {
   padding: 8px 10px;
 }
 
-.tabla-excel td:first-child,
-.tabla-excel th:first-child {
+.tabla-excel td:first-child {
   text-align: left;
+}
+
+.tabla-excel thead th:first-child {
+  text-align: center;
 }
 
 .tabla-excel tbody td {
@@ -1769,6 +1787,11 @@ tbody tr:nth-child(even):hover {
 
 /* ─── Print ───────────────────────────────────────── */
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
   body {
     background: #fff;
   }
@@ -1788,24 +1811,32 @@ tbody tr:nth-child(even):hover {
   .contenido-principal {
     padding: 0;
     max-width: none;
+    margin: 0;
   }
 
   .hoja-reporte {
-    width: 190mm;
+    width: 100%;
     max-width: 190mm;
     page-break-inside: avoid;
     border: 1px solid #000;
     padding: 6mm;
     margin: 0 auto;
+    box-sizing: border-box;
+    overflow: visible;
   }
 
   .tabla-excel-wrap {
     overflow: visible !important;
+    max-width: none !important;
   }
 
   .tabla-excel {
     min-width: 0 !important;
     width: 100% !important;
+  }
+
+  .tabla-excel thead th {
+    position: static;
   }
 
   .tabla-excel th,
@@ -1815,8 +1846,14 @@ tbody tr:nth-child(even):hover {
   }
 }
 
-/* ─── Mobile Table (responsive cards) ────────────── */
-@media (max-width: 767px) {
+/* ─── Responsive Report & Mobile Layout ───────────── */
+@media (max-width: 1024px) {
+  .tabla-excel {
+    min-width: 940px;
+  }
+}
+
+@media (max-width: 768px) {
   .contenido-principal {
     padding: 16px;
   }
@@ -1897,8 +1934,13 @@ tbody tr:nth-child(even):hover {
   }
 
   .hoja-reporte {
+    width: 100%;
+    max-width: 100%;
     border-width: 1px;
     padding: 10px;
+    margin: 0;
+    box-sizing: border-box;
+    overflow: hidden;
   }
 
   .cabecera-hoja {
@@ -1910,6 +1952,14 @@ tbody tr:nth-child(even):hover {
 
   .cabecera-hoja img {
     width: 92px;
+  }
+
+  .datos-cabecera-excel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
   }
 
   .datos-cabecera-excel h3 {
@@ -1926,11 +1976,36 @@ tbody tr:nth-child(even):hover {
   .titulo-semana-excel {
     margin-top: 4px;
     font-size: 0.72rem;
+    line-height: 1.25;
+  }
+
+  .tabla-excel-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
   }
 
   .tabla-excel {
     min-width: 900px;
     font-size: 0.72rem;
+  }
+
+  .tabla-excel thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+
+  .tabla-excel-head-l1 th {
+    font-size: 0.82rem;
+    padding: 6px 5px;
+  }
+
+  .tabla-excel-head-l2 th {
+    font-size: 0.74rem;
+    padding: 5px 5px;
   }
 
   .tabla-excel th,
@@ -1947,12 +2022,6 @@ tbody tr:nth-child(even):hover {
   .total-empacado-excel strong {
     padding: 6px 6px;
     font-size: 0.8rem;
-  }
-
-
-@media (max-width: 1024px) {
-  .tabla-excel {
-    min-width: 940px;
   }
 }
 
@@ -2026,6 +2095,10 @@ tbody tr:nth-child(even):hover {
     padding: 24px;
   }
 }
+
+
+
+@media (max-width: 767px) {
   .guia-instalacion {
     left: 12px;
     right: 12px;

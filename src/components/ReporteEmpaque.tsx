@@ -95,20 +95,17 @@ export function ReporteEmpaque({
       <div className="tabla-excel-wrap">
         <table className="tabla-excel">
         <thead>
-          <tr>
-            <th colSpan={1}>DESCRIPCION</th>
+          <tr className="tabla-excel-head-l1">
+            <th rowSpan={2} colSpan={1}>DESCRIPCIÓN</th>
             <th colSpan={8}>EMPAQUE</th>
-            <th colSpan={2}>RENDIMIENTO</th>
+            <th rowSpan={2} colSpan={2}>RENDIMIENTO</th>
           </tr>
-          <tr>
-            <th></th>
+          <tr className="tabla-excel-head-l2">
             <th colSpan={2}>CESTAS</th>
             <th colSpan={3}>CAJAS DE AMERICANA</th>
             <th colSpan={3}>CAJAS DE HINDÚ</th>
-            <th colSpan={1}>A</th>
-            <th colSpan={1}>H</th>
           </tr>
-          <tr>
+          <tr className="tabla-excel-head-l3">
             <th>FECHA</th>
             <th>A</th>
             <th>H</th>
