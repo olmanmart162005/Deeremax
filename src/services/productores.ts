@@ -17,9 +17,11 @@ export const estaActivo = (productor: Productor) => {
 }
 
 export const guardarProductor = async (productorId: string | null, payload: PayloadProductor) => {
+  const nombre = payload.nombre.trim().toUpperCase()
+
   const basePayload = {
     codigo: payload.codigo,
-    nombre: payload.nombre,
+    nombre,
     telefono: payload.telefono,
     finca: payload.finca,
     sector: payload.sector,

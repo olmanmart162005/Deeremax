@@ -255,7 +255,7 @@ const normalizarProductor = (row: Record<string, unknown>): Productor => {
   return {
     id: String(row.id ?? ''),
     codigo: String(row.codigo ?? '').trim() || null,
-    nombre: String(row.nombre ?? ''),
+    nombre: String(row.nombre ?? '').trim().toUpperCase(),
     telefono: String(row.telefono ?? '').trim() || null,
     finca: String(row.finca ?? '').trim() || null,
     sector: String(row.sector ?? '').trim() || null,
@@ -1203,7 +1203,7 @@ function App() {
 
     const { error } = await guardarProductor(formProductor.id, {
       codigo: normalizarCodigo(formProductor.codigo),
-      nombre: formProductor.nombre.trim(),
+      nombre: formProductor.nombre.trim().toUpperCase(),
       telefono: formProductor.telefono.trim(),
       finca: formProductor.finca.trim(),
       sector: formProductor.sector.trim(),
@@ -1226,7 +1226,7 @@ function App() {
     setFormProductor({
       id: item.id,
       codigo: item.codigo ?? siguienteCodigo(qProductores.data ?? []),
-      nombre: item.nombre,
+      nombre: item.nombre.toUpperCase(),
       telefono: item.telefono ?? '',
       finca: item.finca ?? '',
       sector: item.sector ?? '',
@@ -2773,7 +2773,7 @@ function App() {
                   type="text"
                   maxLength={120}
                   value={formProductor.nombre}
-                  onChange={(e) => setFormProductor((prev) => ({ ...prev, nombre: e.target.value }))}
+                  onChange={(e) => setFormProductor((prev) => ({ ...prev, nombre: e.target.value.toUpperCase() }))}
                   required
                 />
               </label>

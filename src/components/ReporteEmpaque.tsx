@@ -59,7 +59,7 @@ export function ReporteEmpaque({
   }
 
   return (
-    <article id={id} className={['hoja-reporte', className].filter(Boolean).join(' ')}>
+    <article id={id} className={['hoja-reporte', 'reporte-empaque', className].filter(Boolean).join(' ')}>
       {mostrarAccionImprimir ? (
         <div className="acciones-linea acciones-reporte-zona print-hidden">
           <button type="button" className="ghost" onClick={handleExportarPNG}>
@@ -78,10 +78,10 @@ export function ReporteEmpaque({
         <div className="datos-cabecera-excel">
           <h3>DEEREMAX</h3>
           <p>
-            <strong>PROD:</strong> {productor?.nombre ?? 'N/A'}
+            <strong>PROD:</strong> {(productor?.nombre ?? 'N/A').toUpperCase()}
           </p>
           <p>
-            <strong>CÓDIGO:</strong> {productor?.codigo ?? 'N/A'}
+            <strong>CÓDIGO:</strong> {(productor?.codigo ?? 'N/A').toUpperCase()}
           </p>
           <p className="titulo-semana-excel">
             REPORTE DE EMPAQUE / SEMANA DEL{' '}
@@ -92,7 +92,8 @@ export function ReporteEmpaque({
         </div>
       </header>
 
-      <table className="tabla-excel">
+      <div className="tabla-excel-wrap">
+        <table className="tabla-excel">
         <thead>
           <tr>
             <th colSpan={1}>DESCRIPCION</th>
@@ -156,7 +157,8 @@ export function ReporteEmpaque({
             <th>{rend.rendimientoH.toFixed(2).replace('.', ',')}</th>
           </tr>
         </tfoot>
-      </table>
+        </table>
+      </div>
 
       <div className="total-empacado-excel">
         <span>TOTAL DE CAJAS EMPACADAS</span>

@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs'
-import { toPng, toJpeg } from 'html-to-image'
+import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 import type { Productor, Reporte } from '../types'
 import { computeDailyTotals, computeWeeklyTotals, weeklyRendimiento } from '../utils/report'
@@ -35,13 +35,53 @@ const filterNoButtons = (node: Node) => {
   return true
 }
 
-export const exportarReporteEmpaquePNG = async (element: HTMLElement, fileName: string) => {
-  const dataUrl = await toPng(element, {
-    cacheBust: true,
+const esperarSiguienteFrame = () => new Promise<void>((resolve) => {
+  requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+})
+
+const esperarImagenes = async (element: HTMLElement) => {
+  const imagenes = Array.from(element.querySelectorAll('img'))
+  await Promise.all(
+    imagenes.map((img) => {
+      if (img.complete) return Promise.resolve()
+      return new Promise<void>((resolve) => {
+        img.addEventListener('load', () => resolve(), { once: true })
+        img.addEventListener('error', () => resolve(), { once: true })
+      })
+    }),
+  )
+}
+
+const capturarCanvasCompleto = async (element: HTMLElement, scale = 3) => {
+  if ('fonts' in document) {
+    await (document as Document & { fonts: FontFaceSet }).fonts.ready
+  }
+
+  await esperarImagenes(element)
+  await esperarSiguienteFrame()
+
+  const width = Math.ceil(element.scrollWidth)
+  const height = Math.ceil(element.scrollHeight)
+
+  return html2canvas(element, {
     backgroundColor: '#ffffff',
-    pixelRatio: 2,
-    filter: filterNoButtons,
+    scale,
+    useCORS: true,
+    allowTaint: false,
+    logging: false,
+    width,
+    height,
+    windowWidth: width,
+    windowHeight: height,
+    scrollX: 0,
+    scrollY: 0,
+    ignoreElements: (node) => !filterNoButtons(node),
   })
+}
+
+export const exportarReporteEmpaquePNG = async (element: HTMLElement, fileName: string) => {
+  const canvas = await capturarCanvasCompleto(element, 3)
+  const dataUrl = canvas.toDataURL('image/png', 1)
   const link = document.createElement('a')
   link.href = dataUrl
   link.download = fileName
@@ -49,13 +89,8 @@ export const exportarReporteEmpaquePNG = async (element: HTMLElement, fileName: 
 }
 
 export const exportarReporteEmpaqueJPG = async (element: HTMLElement, fileName: string) => {
-  const dataUrl = await toJpeg(element, {
-    cacheBust: true,
-    backgroundColor: '#ffffff',
-    quality: 0.96,
-    pixelRatio: 2,
-    filter: filterNoButtons,
-  })
+  const canvas = await capturarCanvasCompleto(element, 3)
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.98)
   const link = document.createElement('a')
   link.href = dataUrl
   link.download = fileName
@@ -63,11 +98,8 @@ export const exportarReporteEmpaqueJPG = async (element: HTMLElement, fileName: 
 }
 
 export const exportarReporteEmpaquePDF = async (element: HTMLElement, fileName: string) => {
-  const image = await toPng(element, {
-    cacheBust: true,
-    backgroundColor: '#ffffff',
-    pixelRatio: 2,
-  })
+  const sourceCanvas = await capturarCanvasCompleto(element, 3)
+  const image = sourceCanvas.toDataURL('image/png', 1)
 
   const pdf = new jsPDF('p', 'mm', 'a4')
   const pdfWidth = pdf.internal.pageSize.getWidth()
@@ -75,13 +107,7 @@ export const exportarReporteEmpaquePDF = async (element: HTMLElement, fileName: 
   const margin = 8
   const renderWidth = pdfWidth - margin * 2
 
-  const img = new Image()
-  img.src = image
-  await new Promise((resolve) => {
-    img.onload = resolve
-  })
-
-  const renderHeight = (img.height * renderWidth) / img.width
+  const renderHeight = (sourceCanvas.height * renderWidth) / sourceCanvas.width
   if (renderHeight <= pdfHeight - margin * 2) {
     pdf.addImage(image, 'PNG', margin, margin, renderWidth, renderHeight)
   } else {
@@ -89,21 +115,21 @@ export const exportarReporteEmpaquePDF = async (element: HTMLElement, fileName: 
     const pageCtx = pageCanvas.getContext('2d')
     if (!pageCtx) return
 
-    const pxPerMm = img.width / renderWidth
+    const pxPerMm = sourceCanvas.width / renderWidth
     const pageHeightPx = Math.floor((pdfHeight - margin * 2) * pxPerMm)
-    pageCanvas.width = img.width
+    pageCanvas.width = sourceCanvas.width
     pageCanvas.height = pageHeightPx
 
     let offsetY = 0
     let page = 0
 
-    while (offsetY < img.height) {
+    while (offsetY < sourceCanvas.height) {
       pageCtx.clearRect(0, 0, pageCanvas.width, pageCanvas.height)
-      pageCtx.drawImage(img, 0, offsetY, img.width, pageHeightPx, 0, 0, img.width, pageHeightPx)
+      pageCtx.drawImage(sourceCanvas, 0, offsetY, sourceCanvas.width, pageHeightPx, 0, 0, sourceCanvas.width, pageHeightPx)
 
       if (page > 0) pdf.addPage()
       const pageImage = pageCanvas.toDataURL('image/png')
-      const remainingPx = img.height - offsetY
+      const remainingPx = sourceCanvas.height - offsetY
       const currentPagePx = Math.min(pageHeightPx, remainingPx)
       const currentHeightMm = currentPagePx / pxPerMm
       pdf.addImage(pageImage, 'PNG', margin, margin, renderWidth, currentHeightMm)

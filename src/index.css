@@ -1030,6 +1030,14 @@ tbody tr:nth-child(even):hover {
   border: 2px solid #000;
   background: #fff;
   padding: 16px;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.reporte-empaque {
+  width: 100%;
+  max-width: 100%;
 }
 
 .acciones-reporte-zona {
@@ -1096,6 +1104,20 @@ tbody tr:nth-child(even):hover {
   font-weight: 900;
 }
 
+.tabla-excel-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tabla-excel {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+}
+
 .tabla-excel tfoot th {
   background: var(--dorado-500);
   border-color: #000;
@@ -1104,6 +1126,14 @@ tbody tr:nth-child(even):hover {
 .tabla-excel td,
 .tabla-excel th {
   border: 1px solid #000;
+  white-space: nowrap;
+  text-align: center;
+  padding: 8px 10px;
+}
+
+.tabla-excel td:first-child,
+.tabla-excel th:first-child {
+  text-align: left;
 }
 
 .tabla-excel tbody td {
@@ -1761,7 +1791,27 @@ tbody tr:nth-child(even):hover {
   }
 
   .hoja-reporte {
+    width: 190mm;
+    max-width: 190mm;
     page-break-inside: avoid;
+    border: 1px solid #000;
+    padding: 6mm;
+    margin: 0 auto;
+  }
+
+  .tabla-excel-wrap {
+    overflow: visible !important;
+  }
+
+  .tabla-excel {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  .tabla-excel th,
+  .tabla-excel td {
+    font-size: 10px;
+    padding: 4px 5px;
   }
 }
 
@@ -1846,6 +1896,136 @@ tbody tr:nth-child(even):hover {
     gap: 12px;
   }
 
+  .hoja-reporte {
+    border-width: 1px;
+    padding: 10px;
+  }
+
+  .cabecera-hoja {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 10px;
+  }
+
+  .cabecera-hoja img {
+    width: 92px;
+  }
+
+  .datos-cabecera-excel h3 {
+    font-size: 0.85rem;
+    margin: 2px 0;
+  }
+
+  .datos-cabecera-excel p {
+    margin: 2px 0;
+    font-size: 0.74rem;
+    line-height: 1.2;
+  }
+
+  .titulo-semana-excel {
+    margin-top: 4px;
+    font-size: 0.72rem;
+  }
+
+  .tabla-excel {
+    min-width: 900px;
+    font-size: 0.72rem;
+  }
+
+  .tabla-excel th,
+  .tabla-excel td {
+    padding: 6px 8px;
+  }
+
+  .total-empacado-excel {
+    width: 100%;
+    grid-template-columns: 1fr 88px;
+  }
+
+  .total-empacado-excel span,
+  .total-empacado-excel strong {
+    padding: 6px 6px;
+    font-size: 0.8rem;
+  }
+
+
+@media (max-width: 1024px) {
+  .tabla-excel {
+    min-width: 940px;
+  }
+}
+
+@media (max-width: 480px) {
+  .hoja-reporte {
+    padding: 8px;
+  }
+
+  .tabla-excel {
+    min-width: 860px;
+    font-size: 0.68rem;
+  }
+
+  .tabla-excel th,
+  .tabla-excel td {
+    padding: 5px 6px;
+  }
+
+  .cabecera-hoja img {
+    width: 82px;
+  }
+}
+
+@media (max-width: 390px) {
+  .tabla-excel {
+    min-width: 820px;
+    font-size: 0.65rem;
+  }
+}
+
+@media (max-width: 375px) {
+  .tabla-excel {
+    min-width: 800px;
+  }
+}
+
+@media (max-width: 360px) {
+  .tabla-excel {
+    min-width: 780px;
+    font-size: 0.63rem;
+  }
+}
+
+@media (max-width: 320px) {
+  .tabla-excel {
+    min-width: 760px;
+    font-size: 0.6rem;
+  }
+}
+
+@media (min-width: 1366px) {
+  .hoja-reporte {
+    padding: 18px;
+  }
+}
+
+@media (min-width: 1440px) {
+  .hoja-reporte {
+    padding: 20px;
+  }
+}
+
+@media (min-width: 1600px) {
+  .hoja-reporte {
+    padding: 22px;
+  }
+}
+
+@media (min-width: 1920px) {
+  .hoja-reporte {
+    padding: 24px;
+  }
+}
   .guia-instalacion {
     left: 12px;
     right: 12px;
