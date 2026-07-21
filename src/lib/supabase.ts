@@ -5,14 +5,15 @@ const publishableFromEnv = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as stri
 const anonFromEnv = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 const supabasePublishableKey = publishableFromEnv || anonFromEnv
 
-if (!supabaseUrl || !supabasePublishableKey) {
+export const supabaseConfigError = !supabaseUrl || !supabasePublishableKey
+  ? 'Faltan variables de Supabase: VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY (o VITE_SUPABASE_ANON_KEY).'
+  : null
+
+if (supabaseConfigError) {
   console.error('Configuracion de Supabase incompleta', {
     hasUrl: Boolean(supabaseUrl),
     hasPublishableKey: Boolean(supabasePublishableKey),
   })
-  throw new Error(
-    'Faltan variables de Supabase: VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY (o VITE_SUPABASE_ANON_KEY)',
-  )
 }
 
 if (publishableFromEnv && anonFromEnv && publishableFromEnv !== anonFromEnv) {
@@ -29,4 +30,6 @@ try {
   console.warn('[Supabase] URL invalida en VITE_SUPABASE_URL')
 }
 
-export const supabase = createClient(supabaseUrl, supabasePublishableKey)
+export const supabase = supabaseConfigError
+  ? (null as unknown as ReturnType<typeof createClient>)
+  : createClient(supabaseUrl, supabasePublishableKey as string)

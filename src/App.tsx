@@ -86,6 +86,7 @@ import {
   toNumber,
   weeklyRendimiento,
 } from './utils/report'
+import { supabaseConfigError } from './lib/supabase'
 
 type FiltroRango = 'semana' | 'mes' | 'anio' | 'personalizado' | 'todo'
 type DashboardRango = 'hoy' | 'semana' | 'mes' | 'anio' | 'personalizado'
@@ -541,6 +542,8 @@ function App() {
   }, [toast])
 
   useEffect(() => {
+    if (supabaseConfigError) return
+
     supabase.auth.getSession().then(({ data }) => {
       setSesion(data.session)
     })
@@ -1816,6 +1819,20 @@ function App() {
       color: '#7c3aed',
     },
   ]
+
+  if (supabaseConfigError) {
+    return (
+      <div className="pantalla-carga">
+        <div className="carga-card">
+          <img src="/logoDeereMax.jpeg" alt="DeereMax" />
+          <h2>Configuracion pendiente en Netlify</h2>
+          <p>
+            Agrega las variables VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en Site settings &gt; Environment variables.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   if (!sesion) return <PantallaLogin />
 
