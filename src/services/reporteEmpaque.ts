@@ -52,116 +52,165 @@ const esperarImagenes = async (element: HTMLElement) => {
   )
 }
 
-type Snapshot = {
-  node: HTMLElement
-  style: {
-    overflow: string
-    width: string
-    maxWidth: string
-    minWidth: string
+const EXPORT_DESKTOP_WIDTH = 1400
+const EXPORT_PADDING = 28
+const EXPORT_SCALE = 4
+const PNG_TARGET_WIDTH = 3508
+const PNG_TARGET_HEIGHT = 2480
+const CAPTURE_BUFFER = 8
+const EXPORT_BOTTOM_MARGIN = 24
+
+const prepararClonParaCaptura = (element: HTMLElement) => {
+  const host = document.createElement('div')
+  host.style.position = 'absolute'
+  host.style.left = '-99999px'
+  host.style.top = '0'
+  host.style.background = '#ffffff'
+  host.style.padding = `${EXPORT_PADDING}px`
+  host.style.overflow = 'visible'
+  host.style.width = 'max-content'
+  host.style.minWidth = `${EXPORT_DESKTOP_WIDTH}px`
+  host.style.zIndex = '-1'
+  host.style.pointerEvents = 'none'
+
+  const clone = element.cloneNode(true) as HTMLElement
+  clone.removeAttribute('id')
+  clone.dataset.exportMode = 'desktop'
+  clone.style.overflow = 'visible'
+  clone.style.width = `${EXPORT_DESKTOP_WIDTH}px`
+  clone.style.minWidth = `${EXPORT_DESKTOP_WIDTH}px`
+  clone.style.maxWidth = `${EXPORT_DESKTOP_WIDTH}px`
+  clone.style.transform = 'none'
+
+  const nodos = [clone, ...Array.from(clone.querySelectorAll<HTMLElement>('*'))]
+
+  nodos.forEach((node) => {
+    const computed = window.getComputedStyle(node)
+
+    if (computed.overflow === 'hidden' || computed.overflowX === 'hidden' || computed.overflowY === 'hidden') {
+      node.style.overflow = 'visible'
+    }
+
+    if (computed.maxWidth !== 'none') {
+      node.style.maxWidth = 'none'
+    }
+
+    if (computed.transform && computed.transform !== 'none') {
+      node.style.transform = 'none'
+    }
+
+    node.style.transition = 'none'
+    node.style.animation = 'none'
+
+    if (node.classList.contains('tabla-excel-wrap')) {
+      node.style.overflow = 'visible'
+      node.style.width = `${EXPORT_DESKTOP_WIDTH - EXPORT_PADDING * 2}px`
+      node.style.maxWidth = 'none'
+      node.style.minWidth = '0'
+      node.scrollLeft = 0
+    }
+
+    if (node.classList.contains('tabla-excel')) {
+      node.style.width = 'max-content'
+      node.style.maxWidth = 'none'
+      node.style.minWidth = '100%'
+    }
+
+    if (node.classList.contains('cabecera-hoja')) {
+      node.style.display = 'flex'
+      node.style.flexDirection = 'row'
+      node.style.alignItems = 'center'
+      node.style.textAlign = 'left'
+      node.style.gap = '16px'
+    }
+
+    if (node.classList.contains('hoja-reporte') || node.classList.contains('reporte-empaque')) {
+      node.style.width = `${EXPORT_DESKTOP_WIDTH}px`
+      node.style.minWidth = `${EXPORT_DESKTOP_WIDTH}px`
+      node.style.maxWidth = `${EXPORT_DESKTOP_WIDTH}px`
+      node.style.overflow = 'visible'
+    }
+  })
+
+  host.appendChild(clone)
+
+  // Keep an explicit blank space after the report to avoid clipping the bottom border.
+  const bottomSpacer = document.createElement('div')
+  bottomSpacer.style.height = `${EXPORT_BOTTOM_MARGIN}px`
+  bottomSpacer.style.width = '100%'
+  bottomSpacer.style.pointerEvents = 'none'
+  host.appendChild(bottomSpacer)
+
+  document.body.appendChild(host)
+
+  const limpiar = () => {
+    host.remove()
   }
-  scrollLeft: number
+
+  return { host, limpiar }
 }
 
-const capturarEstilo = (node: HTMLElement): Snapshot => ({
-  node,
-  style: {
-    overflow: node.style.overflow,
-    width: node.style.width,
-    maxWidth: node.style.maxWidth,
-    minWidth: node.style.minWidth,
-  },
-  scrollLeft: node.scrollLeft,
-})
-
-const restaurarEstilos = (snapshots: Snapshot[]) => {
-  snapshots.forEach(({ node, style, scrollLeft }) => {
-    node.style.overflow = style.overflow
-    node.style.width = style.width
-    node.style.maxWidth = style.maxWidth
-    node.style.minWidth = style.minWidth
-    node.scrollLeft = scrollLeft
-  })
-}
-
-const expandirParaCaptura = (element: HTMLElement) => {
-  const snapshots: Snapshot[] = []
-  snapshots.push(capturarEstilo(element))
-  element.style.overflow = 'visible'
-  element.style.maxWidth = 'none'
-
-  const wrappers = Array.from(element.querySelectorAll<HTMLElement>('.tabla-excel-wrap'))
-  wrappers.forEach((wrapper) => {
-    snapshots.push(capturarEstilo(wrapper))
-    wrapper.style.overflow = 'visible'
-    wrapper.style.width = 'max-content'
-    wrapper.style.maxWidth = 'none'
-    wrapper.style.minWidth = '0'
-    wrapper.scrollLeft = 0
-  })
-
-  const tablas = Array.from(element.querySelectorAll<HTMLElement>('.tabla-excel'))
-  tablas.forEach((tabla) => {
-    snapshots.push(capturarEstilo(tabla))
-    tabla.style.width = 'max-content'
-    tabla.style.maxWidth = 'none'
-    tabla.style.minWidth = '100%'
-  })
-
-  const computed = window.getComputedStyle(element)
-  const paddingX = Number.parseFloat(computed.paddingLeft || '0') + Number.parseFloat(computed.paddingRight || '0')
-  const borderX = Number.parseFloat(computed.borderLeftWidth || '0') + Number.parseFloat(computed.borderRightWidth || '0')
-
-  const anchoTablas = Math.max(
-    0,
-    ...tablas.map((tabla) => tabla.scrollWidth),
-    ...wrappers.map((wrapper) => wrapper.scrollWidth),
-  )
-
-  if (anchoTablas > 0) {
-    element.style.width = `${Math.ceil(anchoTablas + paddingX + borderX)}px`
-  }
-
-  return () => restaurarEstilos(snapshots)
-}
-
-const capturarCanvasCompleto = async (element: HTMLElement, scale = 3) => {
+const capturarCanvasCompleto = async (element: HTMLElement, scale = 4) => {
   if ('fonts' in document) {
     await (document as Document & { fonts: FontFaceSet }).fonts.ready
   }
 
-  const restaurar = expandirParaCaptura(element)
+  const { host, limpiar } = prepararClonParaCaptura(element)
 
-  await esperarImagenes(element)
+  await esperarImagenes(host)
   await esperarSiguienteFrame()
   await esperarSiguienteFrame()
 
-  const width = Math.ceil(Math.max(element.scrollWidth, element.offsetWidth))
-  const height = Math.ceil(Math.max(element.scrollHeight, element.offsetHeight))
+  const width = Math.ceil(Math.max(host.scrollWidth, host.getBoundingClientRect().width) + CAPTURE_BUFFER)
+  const height = Math.ceil(Math.max(host.scrollHeight, host.getBoundingClientRect().height) + CAPTURE_BUFFER)
 
   try {
-    return await html2canvas(element, {
+    return await html2canvas(host, {
       backgroundColor: '#ffffff',
       scale,
       useCORS: true,
-      allowTaint: false,
+      allowTaint: true,
       logging: false,
       width,
       height,
-      windowWidth: width,
-      windowHeight: height,
+      windowWidth: Math.max(width, EXPORT_DESKTOP_WIDTH),
+      windowHeight: Math.max(height, 1200),
       scrollX: 0,
       scrollY: 0,
       ignoreElements: (node) => !filterNoButtons(node),
     })
   } finally {
-    restaurar()
+    limpiar()
   }
 }
 
+const prepararCanvasAltaResolucion = (sourceCanvas: HTMLCanvasElement) => {
+  const upscaleFactor = Math.max(
+    1,
+    PNG_TARGET_WIDTH / sourceCanvas.width,
+    PNG_TARGET_HEIGHT / sourceCanvas.height,
+  )
+
+  const scaledWidth = Math.ceil(sourceCanvas.width * upscaleFactor)
+  const scaledHeight = Math.ceil(sourceCanvas.height * upscaleFactor)
+
+  const canvas = document.createElement('canvas')
+  canvas.width = scaledWidth
+  canvas.height = scaledHeight
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return sourceCanvas
+
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(sourceCanvas, 0, 0, scaledWidth, scaledHeight)
+
+  return canvas
+}
+
 export const exportarReporteEmpaquePNG = async (element: HTMLElement, fileName: string) => {
-  const scale = Math.max(3, Math.min(5, window.devicePixelRatio || 1))
-  const canvas = await capturarCanvasCompleto(element, scale)
+  const captured = await capturarCanvasCompleto(element, EXPORT_SCALE)
+  const canvas = prepararCanvasAltaResolucion(captured)
   const dataUrl = canvas.toDataURL('image/png', 1)
   const link = document.createElement('a')
   link.href = dataUrl
@@ -170,8 +219,8 @@ export const exportarReporteEmpaquePNG = async (element: HTMLElement, fileName: 
 }
 
 export const exportarReporteEmpaqueJPG = async (element: HTMLElement, fileName: string) => {
-  const scale = Math.max(3, Math.min(5, window.devicePixelRatio || 1))
-  const canvas = await capturarCanvasCompleto(element, scale)
+  const captured = await capturarCanvasCompleto(element, EXPORT_SCALE)
+  const canvas = prepararCanvasAltaResolucion(captured)
   const dataUrl = canvas.toDataURL('image/jpeg', 0.98)
   const link = document.createElement('a')
   link.href = dataUrl
@@ -180,47 +229,29 @@ export const exportarReporteEmpaqueJPG = async (element: HTMLElement, fileName: 
 }
 
 export const exportarReporteEmpaquePDF = async (element: HTMLElement, fileName: string) => {
-  const scale = Math.max(3, Math.min(5, window.devicePixelRatio || 1))
-  const sourceCanvas = await capturarCanvasCompleto(element, scale)
+  const sourceCaptured = await capturarCanvasCompleto(element, EXPORT_SCALE)
+  const sourceCanvas = prepararCanvasAltaResolucion(sourceCaptured)
   const image = sourceCanvas.toDataURL('image/png', 1)
 
-  const pdf = new jsPDF('p', 'mm', 'a4')
+  const pdf = new jsPDF('l', 'mm', 'a4')
   const pdfWidth = pdf.internal.pageSize.getWidth()
   const pdfHeight = pdf.internal.pageSize.getHeight()
-  const margin = 8
+  const margin = 10
   const renderWidth = pdfWidth - margin * 2
+  const renderHeightLimit = pdfHeight - margin * 2
 
-  const renderHeight = (sourceCanvas.height * renderWidth) / sourceCanvas.width
-  if (renderHeight <= pdfHeight - margin * 2) {
-    pdf.addImage(image, 'PNG', margin, margin, renderWidth, renderHeight)
-  } else {
-    const pageCanvas = document.createElement('canvas')
-    const pageCtx = pageCanvas.getContext('2d')
-    if (!pageCtx) return
+  const ratio = sourceCanvas.width / sourceCanvas.height
+  let drawWidth = renderWidth
+  let drawHeight = drawWidth / ratio
 
-    const pxPerMm = sourceCanvas.width / renderWidth
-    const pageHeightPx = Math.floor((pdfHeight - margin * 2) * pxPerMm)
-    pageCanvas.width = sourceCanvas.width
-    pageCanvas.height = pageHeightPx
-
-    let offsetY = 0
-    let page = 0
-
-    while (offsetY < sourceCanvas.height) {
-      pageCtx.clearRect(0, 0, pageCanvas.width, pageCanvas.height)
-      pageCtx.drawImage(sourceCanvas, 0, offsetY, sourceCanvas.width, pageHeightPx, 0, 0, sourceCanvas.width, pageHeightPx)
-
-      if (page > 0) pdf.addPage()
-      const pageImage = pageCanvas.toDataURL('image/png')
-      const remainingPx = sourceCanvas.height - offsetY
-      const currentPagePx = Math.min(pageHeightPx, remainingPx)
-      const currentHeightMm = currentPagePx / pxPerMm
-      pdf.addImage(pageImage, 'PNG', margin, margin, renderWidth, currentHeightMm)
-
-      offsetY += pageHeightPx
-      page += 1
-    }
+  if (drawHeight > renderHeightLimit) {
+    drawHeight = renderHeightLimit
+    drawWidth = drawHeight * ratio
   }
+
+  const x = (pdfWidth - drawWidth) / 2
+  const y = (pdfHeight - drawHeight) / 2
+  pdf.addImage(image, 'PNG', x, y, drawWidth, drawHeight)
 
   pdf.save(fileName)
 }

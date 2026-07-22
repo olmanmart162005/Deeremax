@@ -1,6 +1,6 @@
 import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { FileImage, Printer } from 'lucide-react'
+import { Download } from 'lucide-react'
 import type { Productor, Reporte } from '../types'
 import { computeDailyTotals, computeWeeklyTotals, weeklyRendimiento } from '../utils/report'
 import { exportarReporteEmpaquePNG } from '../services/reporteEmpaque'
@@ -10,9 +10,7 @@ type Props = {
   productor?: Productor | null
   id?: string
   className?: string
-  mostrarAccionImprimir?: boolean
-  onImprimir?: () => void
-  onExportarPNG?: () => void
+  mostrarAccionExportarPNG?: boolean
 }
 
 export function ReporteEmpaque({
@@ -20,12 +18,13 @@ export function ReporteEmpaque({
   productor,
   id,
   className,
-  mostrarAccionImprimir = false,
-  onImprimir,
-  onExportarPNG,
+  mostrarAccionExportarPNG = false,
 }: Props) {
   const total = computeWeeklyTotals(reporte)
   const rend = weeklyRendimiento(reporte)
+  const fechaGeneracion = format(new Date(), "d 'de' MMMM 'de' yyyy", { locale: es })
+  const periodoDesde = format(parseISO(reporte.fecha_inicio), "d 'de' MMMM 'de' yyyy", { locale: es })
+  const periodoHasta = format(parseISO(reporte.fecha_fin), "d 'de' MMMM 'de' yyyy", { locale: es })
   const observaciones = reporte.detalle_reporte
     .map((detalle) => ({
       id: detalle.id,
@@ -46,30 +45,20 @@ export function ReporteEmpaque({
   )
 
   const handleExportarPNG = () => {
-    if (onExportarPNG) {
-      onExportarPNG()
-      return
-    }
     const el = id ? document.getElementById(id) : null
-    if (el) {
-      const prodSlug = productor?.nombre ? productor.nombre.toLowerCase().replace(/\s+/g, '-') : 'productor'
-      const nombreFile = `reporte-${prodSlug}-semana-${reporte.semana}-${reporte.anio}.png`
-      void exportarReporteEmpaquePNG(el, nombreFile)
-    }
+    if (!el) return
+    const prodSlug = productor?.nombre ? productor.nombre.toLowerCase().replace(/\s+/g, '-') : 'productor'
+    const nombreFile = `reporte-${prodSlug}-semana-${reporte.semana}-${reporte.anio}.png`
+    void exportarReporteEmpaquePNG(el, nombreFile)
   }
 
   return (
     <article id={id} className={['hoja-reporte', 'reporte-empaque', className].filter(Boolean).join(' ')}>
-      {mostrarAccionImprimir ? (
+      {mostrarAccionExportarPNG ? (
         <div className="acciones-linea acciones-reporte-zona print-hidden">
-          <button type="button" className="ghost" onClick={handleExportarPNG}>
-            <FileImage size={16} /> Exportar PNG
+          <button type="button" className="export-action-button" onClick={handleExportarPNG}>
+            <Download size={16} /> Exportar PNG
           </button>
-          {onImprimir ? (
-            <button type="button" onClick={onImprimir}>
-              <Printer size={16} /> Imprimir reporte
-            </button>
-          ) : null}
         </div>
       ) : null}
 
@@ -77,17 +66,22 @@ export function ReporteEmpaque({
         <img src="/logoDeereMax.jpeg" alt="DeereMax" />
         <div className="datos-cabecera-excel">
           <h3>DEEREMAX</h3>
+          <p className="titulo-reporte-principal">REPORTE DE EMPAQUE</p>
           <p>
-            <strong>PROD:</strong> {(productor?.nombre ?? 'N/A').toUpperCase()}
+            <strong>PRODUCTOR:</strong> {(productor?.nombre ?? 'N/A').toUpperCase()}
           </p>
           <p>
             <strong>CÓDIGO:</strong> {(productor?.codigo ?? 'N/A').toUpperCase()}
           </p>
+          <p className="titulo-semana-excel">SEMANA {reporte.semana} DEL AÑO {reporte.anio}</p>
           <p className="titulo-semana-excel">
-            REPORTE DE EMPAQUE / SEMANA DEL{' '}
-            {format(parseISO(reporte.fecha_inicio), "d 'DE' MMMM 'DEL' yyyy", { locale: es }).toUpperCase()}{' '}
-            AL{' '}
-            {format(parseISO(reporte.fecha_fin), "d 'DE' MMMM 'DEL' yyyy", { locale: es }).toUpperCase()}
+            PERÍODO DEL {periodoDesde.toUpperCase()}
+          </p>
+          <p className="titulo-semana-excel">
+            AL {periodoHasta.toUpperCase()}
+          </p>
+          <p className="fecha-generacion-reporte">
+            Fecha de generación: {fechaGeneracion}
           </p>
         </div>
       </header>

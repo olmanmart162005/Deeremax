@@ -12,8 +12,6 @@ import {
   Eye,
   EyeOff,
   Filter,
-  FileImage,
-  FileSpreadsheet,
   FileText,
   FolderOpen,
   Home,
@@ -29,13 +27,13 @@ import {
   Play,
   Plus,
   Power,
-  Printer,
   Save,
   Settings,
   Trophy,
   Trash2,
   TrendingDown,
   TrendingUp,
+  UserCircle2,
   UserRound,
   Users,
   X,
@@ -67,6 +65,7 @@ import {
   guardarProductor,
 } from './services/productores'
 import {
+  exportElementToImage,
   exportElementToPdf,
   exportRowsToCsv,
   exportRowsToExcel,
@@ -74,7 +73,6 @@ import {
 import { ReporteEmpaque } from './components/ReporteEmpaque'
 import {
   exportarReporteEmpaqueExcel,
-  exportarReporteEmpaqueJPG,
   exportarReporteEmpaquePDF,
   exportarReporteEmpaquePNG,
 } from './services/reporteEmpaque'
@@ -131,6 +129,14 @@ const TITULOS_FILTRO_DASHBOARD: Record<DashboardRango, string> = {
   mes: 'Mes actual',
   anio: 'Año en curso',
   personalizado: 'Período personalizado',
+}
+
+const META_VISTA: Record<Vista, { modulo: string; breadcrumb: string; cargo: string }> = {
+  inicio: { modulo: 'Panel de Control', breadcrumb: 'Inicio', cargo: 'Operaciones' },
+  productores: { modulo: 'Gestión de Productores', breadcrumb: 'Inicio / Productores', cargo: 'Productores' },
+  captura: { modulo: 'Captura Semanal', breadcrumb: 'Inicio / Captura', cargo: 'Producción' },
+  reportes: { modulo: 'Reportes', breadcrumb: 'Inicio / Reportes', cargo: 'Análisis' },
+  admin: { modulo: 'Administración', breadcrumb: 'Inicio / Administración', cargo: 'Administración' },
 }
 
 function AnimatedNumber({ value, decimals = 0 }: { value: number; decimals?: number }) {
@@ -191,11 +197,19 @@ const formatoHora = (date: Date) => {
   }).format(date)
 }
 
+const formatearNombreUsuario = (email: string) => {
+  const base = email.split('@')[0].replace(/[._-]+/g, ' ').trim()
+  if (base.toLowerCase() === 'ervin2026') return 'Ervin Martinez'
+  return base
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}
+
 const normalizarCodigo = (codigo: string) => codigo.trim().toUpperCase()
 
 const infoRendimiento = (rendA: number, rendH: number) => {
-  const promedio = (rendA + rendH) / 2
-  if (promedio >= UMBRAL_BUENO) {
+  if (rendA > UMBRAL_BUENO || rendH > UMBRAL_BUENO) {
     return { label: 'BUENO', className: 'estado-bueno' }
   }
   return { label: 'BAJO RENDIMIENTO', className: 'estado-bajo' }
@@ -1108,7 +1122,51 @@ function App() {
     })
   }, [fechaGeneral, qProductores.data, qReportesGlobal.data])
 
+  const reporteGeneralMeta = useMemo(() => {
+    const criterio = obtenerSemanaAnio(fechaGeneral)
+    const reportesSemana = (qReportesGlobal.data ?? []).filter(
+      (item) => item.semana === criterio.semana && item.anio === criterio.anio,
+    )
+
+    const fallbackRange = getWeekRange(fechaGeneral)
+    const fechasInicio = reportesSemana.map((item) => item.fecha_inicio)
+    const fechasFin = reportesSemana.map((item) => item.fecha_fin)
+
+    const fechaInicio = fechasInicio.length > 0
+      ? [...fechasInicio].sort((a, b) => a.localeCompare(b))[0]
+      : fallbackRange.weekStart
+    const fechaFin = fechasFin.length > 0
+      ? [...fechasFin].sort((a, b) => b.localeCompare(a))[0]
+      : fallbackRange.weekEnd
+
+    const totalCajas = filasGeneralSemanal.reduce((acc, fila) => acc + fila.totalCajas, 0)
+    const fechaGeneracion = format(new Date(), "d 'de' MMMM 'de' yyyy", { locale: es })
+    const periodoDesde = format(parseISO(fechaInicio), "d 'de' MMMM", { locale: es })
+    const periodoHasta = format(parseISO(fechaFin), "d 'de' MMMM 'de' yyyy", { locale: es })
+
+    return {
+      semana: criterio.semana,
+      anio: criterio.anio,
+      fechaInicio,
+      fechaFin,
+      totalCajas,
+      totalProductores: filasGeneralSemanal.length,
+      periodoTexto: `PERIODO DEL ${periodoDesde.toUpperCase()} AL ${periodoHasta.toUpperCase()}`,
+      fechaGeneracion: fechaGeneracion.charAt(0).toUpperCase() + fechaGeneracion.slice(1),
+    }
+  }, [fechaGeneral, filasGeneralSemanal, qReportesGlobal.data])
+
   const vistaCargando = qProductores.isLoading && !qProductores.data
+  const metaVista = META_VISTA[vista]
+  const usuarioEmail = sesion?.user?.email ?? 'usuario@deeremax.app'
+  const usuarioNombre = formatearNombreUsuario(usuarioEmail)
+  const rolUsuario = esAdmin ? 'Administrador' : 'Usuario operativo'
+  const inicialesUsuario = usuarioNombre
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((chunk) => chunk.charAt(0).toUpperCase())
+    .join('')
 
   const onCambiarCaptura = (field: keyof EntryFormState, value: string) => {
     if (field === 'fecha' || field === 'observaciones') {
@@ -1614,118 +1672,11 @@ function App() {
     notificarExito('PDF exportado con exito.')
   }
 
-  const obtenerHtmlEstilos = () => Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
-    .map((node) => node.outerHTML)
-    .join('\n')
-
-  const construirDocumentoImpresion = (titulo: string, contenidoHtml: string) => `<!doctype html>
-<html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>${titulo}</title>
-    ${obtenerHtmlEstilos()}
-    <style>
-      html, body {
-        background: #fff;
-        margin: 0;
-        padding: 0;
-      }
-      body {
-        padding: 12px;
-      }
-      @media print {
-        body {
-          padding: 0;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    ${contenidoHtml}
-  </body>
-</html>`
-
-  const esperarCargaImagenes = async (doc: Document) => {
-    const imagenes = Array.from(doc.images)
-    await Promise.all(
-      imagenes.map((img) => {
-        if (img.complete) return Promise.resolve()
-        return new Promise<void>((resolve) => {
-          const resolver = () => resolve()
-          img.addEventListener('load', resolver, { once: true })
-          img.addEventListener('error', resolver, { once: true })
-        })
-      }),
-    )
-  }
-
-  const imprimirHTML = async (contenidoHtml: string, titulo: string) => {
-    const html = construirDocumentoImpresion(titulo, contenidoHtml)
-    const popup = window.open('', '_blank', 'width=1200,height=900')
-
-    if (popup) {
-      popup.document.open()
-      popup.document.write(html)
-      popup.document.close()
-
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
-      await esperarCargaImagenes(popup.document)
-
-      popup.focus()
-      popup.print()
-      return
-    }
-
-    const iframe = document.createElement('iframe')
-    iframe.style.position = 'fixed'
-    iframe.style.left = '0'
-    iframe.style.top = '0'
-    iframe.style.width = '0'
-    iframe.style.height = '0'
-    iframe.style.border = '0'
-    iframe.style.opacity = '0'
-    document.body.appendChild(iframe)
-
-    const doc = iframe.contentDocument
-    const frameWindow = iframe.contentWindow
-    if (!doc || !frameWindow) {
-      iframe.remove()
-      notificarError('No se pudo abrir la ventana de impresion.')
-      return
-    }
-
-    doc.open()
-    doc.write(html)
-    doc.close()
-
-    await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
-    await esperarCargaImagenes(doc)
-
-    frameWindow.focus()
-    frameWindow.addEventListener('afterprint', () => iframe.remove(), { once: true })
-    frameWindow.print()
-    window.setTimeout(() => iframe.remove(), 15000)
-  }
-
-  const imprimirSoloZona = async (zoneId: string, titulo: string) => {
+  const exportarZonaPng = async (zoneId: string, nombre: string) => {
     const element = document.getElementById(zoneId)
-    if (!element) {
-      notificarError('No se encontro la zona a imprimir.')
-      return
-    }
-
-    await imprimirHTML(element.outerHTML, titulo)
-  }
-
-  const imprimirReporteEnFoco = async () => {
-    const reporte = reportesParaImpresion.find((item) => item.id === reporteEnFocoId) ?? reportesParaImpresion[0]
-    if (!reporte) {
-      notificarError('No hay un reporte disponible para imprimir.')
-      return
-    }
-
-    await imprimirSoloZona(`hoja-reporte-${reporte.id}`, `reporte-${reporte.id}`)
+    if (!element) return
+    await exportElementToImage(element, `${nombre}.png`)
+    notificarExito('PNG exportado con exito.')
   }
 
   const preview = useMemo(
@@ -1849,27 +1800,34 @@ function App() {
   }
 
   return (
-    <div className="dm-app">
+    <div className={`dm-app ${menuAbierto ? 'menu-abierto' : ''}`}>
       <header className="barra-superior print-hidden">
         <button className="boton-menu" onClick={() => setMenuAbierto((v) => !v)}>
           <Menu size={18} />
         </button>
         <div className="marca-top">
           <img src="/logoDeereMax.jpeg" alt="DeereMax" />
-          <div>
-            <h1>DeereMax</h1>
+          <div className="marca-top-texto">
+            <p className="ruta-top">{metaVista.breadcrumb}</p>
+            <h1>{metaVista.modulo}</h1>
             <p>{formatoFechaLarga(ahora)} | {formatoHora(ahora)}</p>
           </div>
         </div>
         <div className="acciones-topbar">
+          <div className="perfil-topbar">
+            <div className="usuario-topbar-chip">
+              <UserCircle2 size={18} />
+              <div>
+                <strong>{usuarioNombre}</strong>
+                <span>{metaVista.cargo}</span>
+              </div>
+            </div>
+          </div>
           {!esAppInstalada ? (
             <button className={`btn-instalar ${esInstalable ? '' : 'ghost'}`} onClick={() => void instalarAplicacion()}>
               <Download size={16} /> {esInstalable ? 'Instalar aplicación' : 'Cómo instalar'}
             </button>
           ) : null}
-          <button className="ghost btn-salir-top" onClick={() => supabase.auth.signOut()}>
-            <LogOut size={16} /> Salir
-          </button>
         </div>
       </header>
 
@@ -1877,27 +1835,41 @@ function App() {
 
       <aside className={`menu-lateral ${menuAbierto ? 'abierto' : ''} print-hidden`}>
         <div className="menu-encabezado">
-          <img src="/logoDeereMax.jpeg" alt="DeereMax" />
-          <button className="ghost" onClick={() => setMenuAbierto(false)}>
+          <div className="menu-brand-block">
+            <img src="/logoDeereMax.jpeg" alt="DeereMax" />
+            <div>
+              <strong>DeereMax ERP</strong>
+              <span>Operaciones DeereMax</span>
+            </div>
+          </div>
+          <button type="button" className="boton-cerrar-drawer" aria-label="Cerrar menú" onClick={() => setMenuAbierto(false)}>
             <X size={16} />
           </button>
         </div>
+        <div className="menu-usuario-resumen">
+          <div className="menu-usuario-avatar" aria-hidden>{inicialesUsuario || 'US'}</div>
+          <div className="menu-usuario-datos">
+            <span>{usuarioNombre}</span>
+            <small>{usuarioEmail}</small>
+            <small>{rolUsuario}</small>
+          </div>
+        </div>
         <nav>
-          <button onClick={() => { setVista('inicio'); setMenuAbierto(false) }}>
+          <button className={`menu-item ${vista === 'inicio' ? 'activo' : ''}`} onClick={() => { setVista('inicio'); setMenuAbierto(false) }}>
             <Home size={16} /> Inicio
           </button>
-          <button onClick={() => { setVista('productores'); setMenuAbierto(false) }}>
+          <button className={`menu-item ${vista === 'productores' ? 'activo' : ''}`} onClick={() => { setVista('productores'); setMenuAbierto(false) }}>
             <Users size={16} /> Productores
           </button>
-          <button onClick={() => { setVista('reportes'); setMenuAbierto(false) }}>
+          <button className={`menu-item ${vista === 'reportes' ? 'activo' : ''}`} onClick={() => { setVista('reportes'); setMenuAbierto(false) }}>
             <FileText size={16} /> Reportes
           </button>
           {esAdmin ? (
-            <button onClick={() => { setVista('admin'); setMenuAbierto(false) }}>
+            <button className={`menu-item ${vista === 'admin' ? 'activo' : ''}`} onClick={() => { setVista('admin'); setMenuAbierto(false) }}>
               <Settings size={16} /> Administración
             </button>
           ) : null}
-          <button onClick={() => { setMenuAbierto(false); supabase.auth.signOut() }}>
+          <button className="menu-item menu-item-salir" onClick={() => { setMenuAbierto(false); supabase.auth.signOut() }}>
             <LogOut size={16} /> Cerrar sesión
           </button>
         </nav>
@@ -2271,9 +2243,6 @@ function App() {
                 <button className="ghost" onClick={() => setVista('productores')}>
                   <ArrowLeft size={16} /> Volver
                 </button>
-                <button onClick={() => void imprimirReporteEnFoco()}>
-                  <Printer size={16} /> Imprimir
-                </button>
               </div>
             </article>
 
@@ -2477,7 +2446,6 @@ function App() {
                                 if (el) void exportarReporteEmpaquePNG(el, `reporte-${productorActivo?.nombre ? productorActivo.nombre.toLowerCase().replace(/\s+/g, '-') : 'productor'}-semana-${rep.semana}-${rep.anio}.png`)
                               }, 100)
                             }}>PNG</button>
-                            <button className="ghost" onClick={() => { setReporteEnFocoId(rep.id); void imprimirSoloZona(`hoja-reporte-${rep.id}`, `reporte-${rep.id}`) }}>Imprimir</button>
                             <button className="ghost" onClick={() => abrirEdicionReporte(rep)}><Pencil size={14} /> Editar</button>
                             <button className="danger" onClick={() => eliminarReporte(rep.id)}>Eliminar</button>
                           </td>
@@ -2496,8 +2464,7 @@ function App() {
                   id={`hoja-reporte-${rep.id}`}
                   reporte={rep}
                   productor={productorActivo}
-                  mostrarAccionImprimir
-                  onImprimir={() => imprimirSoloZona(`hoja-reporte-${rep.id}`, `reporte-${rep.id}`)}
+                  mostrarAccionExportarPNG
                 />
               ))}
             </section>
@@ -2526,18 +2493,19 @@ function App() {
                   />
                 </label>
               </div>
-              <div className="acciones-linea">
-                <button className="ghost" onClick={() => setVista('captura')}><CalendarDays size={16} /> Ver</button>
+              <div className="acciones-linea export-actions">
                 <button
+                  className="export-action-button"
                   onClick={() => {
                     if (!reporteSemanalActivo) return
                     const el = document.getElementById('reporte-empaque-productor') as HTMLElement | null
                     if (el) void exportarReporteEmpaquePDF(el, `reporte-productor-${llaveSemana(obtenerSemanaAnio(fechaReporteProductor).semana, obtenerSemanaAnio(fechaReporteProductor).anio)}.pdf`)
                   }}
                 >
-                  <FileText size={16} /> PDF
+                  <Download size={16} /> Exportar PDF
                 </button>
                 <button
+                  className="export-action-button"
                   onClick={() => {
                     if (!reporteSemanalActivo) return
                     exportarReporteEmpaqueExcel(
@@ -2547,30 +2515,30 @@ function App() {
                     )
                   }}
                 >
-                  <FileSpreadsheet size={16} /> Excel
+                  <Download size={16} /> Exportar Excel
                 </button>
                 <button
-                  onClick={() => {
-                    if (!reporteSemanalActivo) return
-                    const el = document.getElementById('reporte-empaque-productor') as HTMLElement | null
-                    if (el) void exportarReporteEmpaqueJPG(el, `reporte-productor-${llaveSemana(obtenerSemanaAnio(fechaReporteProductor).semana, obtenerSemanaAnio(fechaReporteProductor).anio)}.jpg`)
-                  }}
-                >
-                  <FileImage size={16} /> JPG
-                </button>
-                <button
+                  className="export-action-button"
                   onClick={() => {
                     if (!reporteSemanalActivo) return
                     const el = document.getElementById('reporte-empaque-productor') as HTMLElement | null
                     if (el) void exportarReporteEmpaquePNG(el, `reporte-productor-${llaveSemana(obtenerSemanaAnio(fechaReporteProductor).semana, obtenerSemanaAnio(fechaReporteProductor).anio)}.png`)
                   }}
                 >
-                  <FileImage size={16} /> PNG
+                  <Download size={16} /> Exportar PNG
                 </button>
-                <button onClick={() => {
-                  const el = document.getElementById('reporte-empaque-productor') as HTMLElement | null
-                  if (el) imprimirSoloZona('reporte-empaque-productor', `reporte-productor-${llaveSemana(obtenerSemanaAnio(fechaReporteProductor).semana, obtenerSemanaAnio(fechaReporteProductor).anio)}`)
-                }}><Printer size={16} /> Imprimir</button>
+                <button
+                  className="export-action-button"
+                  onClick={() => {
+                    if (!reporteSemanalActivo) return
+                    exportarCsv(
+                      [reporteSemanalActivo],
+                      `reporte-productor-${llaveSemana(obtenerSemanaAnio(fechaReporteProductor).semana, obtenerSemanaAnio(fechaReporteProductor).anio)}`,
+                    )
+                  }}
+                >
+                  <Download size={16} /> Exportar CSV
+                </button>
               </div>
             </article>
 
@@ -2580,8 +2548,7 @@ function App() {
                   id="reporte-empaque-productor"
                   reporte={reporteSemanalActivo}
                   productor={productorActivo}
-                  mostrarAccionImprimir
-                  onImprimir={() => imprimirSoloZona('reporte-empaque-productor', `reporte-productor-${llaveSemana(obtenerSemanaAnio(fechaReporteProductor).semana, obtenerSemanaAnio(fechaReporteProductor).anio)}`)}
+                  mostrarAccionExportarPNG
                 />
               ) : (
                 <p className="muted">No hay datos para esta semana.</p>
@@ -2596,29 +2563,29 @@ function App() {
                   <input type="date" value={fechaGeneral} onChange={(e) => setFechaGeneral(e.target.value)} />
                 </label>
               </div>
-              <div className="acciones-linea">
-                <button onClick={() => exportarZonaPdf('zona-reporte-general', `reporte-general-${llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)}`)}><FileText size={16} /> PDF</button>
-                <button onClick={() => exportarExcel((qReportesGlobal.data ?? []).filter((item) => llaveSemana(item.semana, item.anio) === llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)), `reporte-general-${llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)}`)}><FileSpreadsheet size={16} /> Excel</button>
-                <button onClick={() => exportarCsv((qReportesGlobal.data ?? []).filter((item) => llaveSemana(item.semana, item.anio) === llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)), `reporte-general-${llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)}`)}><CalendarDays size={16} /> CSV</button>
-                <button onClick={() => void imprimirSoloZona('zona-reporte-general', `reporte-general-${llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)}`)}><Printer size={16} /> Imprimir</button>
+              <div className="acciones-linea export-actions">
+                <button className="export-action-button" onClick={() => exportarZonaPdf('zona-reporte-general', `reporte-general-${llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)}`)}><Download size={16} /> Exportar PDF</button>
+                <button className="export-action-button" onClick={() => void exportarZonaPng('zona-reporte-general', `reporte-general-${llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)}`)}><Download size={16} /> Exportar PNG</button>
+                <button className="export-action-button" onClick={() => exportarExcel((qReportesGlobal.data ?? []).filter((item) => llaveSemana(item.semana, item.anio) === llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)), `reporte-general-${llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)}`)}><Download size={16} /> Exportar Excel</button>
+                <button className="export-action-button" onClick={() => exportarCsv((qReportesGlobal.data ?? []).filter((item) => llaveSemana(item.semana, item.anio) === llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)), `reporte-general-${llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)}`)}><Download size={16} /> Exportar CSV</button>
               </div>
             </article>
 
-            <section id="zona-reporte-general" className="tarjeta-panel">
-              <div className="acciones-linea acciones-reporte-zona print-hidden">
-                <button
-                  onClick={() =>
-                    imprimirSoloZona(
-                      'zona-reporte-general',
-                      `reporte-general-${llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)}`,
-                    )
-                  }
-                >
-                  <Printer size={16} /> Imprimir solo este bloque
-                </button>
-              </div>
+            <section id="zona-reporte-general" className="tarjeta-panel reporte-general-ejecutivo">
+              <header className="reporte-general-head">
+                <img src="/logoDeereMax.jpeg" alt="DeereMax" />
+                <div>
+                  <h3>DEEREMAX</h3>
+                  <h4>REPORTE GENERAL SEMANAL DE PRODUCTORES</h4>
+                  <p>SEMANA {reporteGeneralMeta.semana} DEL AÑO {reporteGeneralMeta.anio}</p>
+                  <p className="linea-periodo">PERÍODO DEL {format(parseISO(reporteGeneralMeta.fechaInicio), "d 'de' MMMM 'de' yyyy", { locale: es }).toUpperCase()}</p>
+                  <p>AL {format(parseISO(reporteGeneralMeta.fechaFin), "d 'de' MMMM 'de' yyyy", { locale: es }).toUpperCase()}</p>
+                  <p className="linea-fecha-generacion">Fecha de generación: {reporteGeneralMeta.fechaGeneracion}</p>
+                </div>
+              </header>
+
               <div className="tabla-wrap">
-                <table className="responsive-table">
+                <table className="responsive-table tabla-general-ejecutiva">
                   <thead>
                     <tr>
                       <th>Productor</th>
@@ -2641,6 +2608,13 @@ function App() {
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr>
+                      <th>TOTAL</th>
+                      <th>{reporteGeneralMeta.totalCajas}</th>
+                      <th colSpan={4}></th>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </section>

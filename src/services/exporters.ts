@@ -1,6 +1,114 @@
 import jsPDF from 'jspdf'
-import { toJpeg, toPng } from 'html-to-image'
+import html2canvas from 'html2canvas'
 import * as XLSX from 'xlsx'
+
+const EXPORT_DESKTOP_WIDTH = 1400
+const EXPORT_PADDING = 28
+const EXPORT_PIXEL_RATIO = 4
+const CAPTURE_BUFFER = 8
+
+const esperarImagenes = async (element: HTMLElement) => {
+  const imagenes = Array.from(element.querySelectorAll('img'))
+  await Promise.all(
+    imagenes.map((img) => {
+      if (img.complete) return Promise.resolve()
+      return new Promise<void>((resolve) => {
+        img.addEventListener('load', () => resolve(), { once: true })
+        img.addEventListener('error', () => resolve(), { once: true })
+      })
+    }),
+  )
+}
+
+const esperarRender = () => new Promise<void>((resolve) => {
+  requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+})
+
+const crearClonExportacion = (element: HTMLElement) => {
+  const host = document.createElement('div')
+  host.style.position = 'absolute'
+  host.style.left = '-99999px'
+  host.style.top = '0'
+  host.style.background = '#ffffff'
+  host.style.padding = `${EXPORT_PADDING}px`
+  host.style.overflow = 'visible'
+  host.style.width = 'max-content'
+  host.style.minWidth = `${EXPORT_DESKTOP_WIDTH}px`
+  host.style.pointerEvents = 'none'
+
+  const clone = element.cloneNode(true) as HTMLElement
+  clone.style.width = `${EXPORT_DESKTOP_WIDTH}px`
+  clone.style.minWidth = `${EXPORT_DESKTOP_WIDTH}px`
+  clone.style.maxWidth = `${EXPORT_DESKTOP_WIDTH}px`
+  clone.style.overflow = 'visible'
+  clone.style.transform = 'none'
+
+  const nodos = [clone, ...Array.from(clone.querySelectorAll<HTMLElement>('*'))]
+  nodos.forEach((node) => {
+    const computed = window.getComputedStyle(node)
+
+    if (computed.overflow === 'hidden' || computed.overflowX === 'hidden' || computed.overflowY === 'hidden') {
+      node.style.overflow = 'visible'
+    }
+
+    if (computed.maxWidth !== 'none') {
+      node.style.maxWidth = 'none'
+    }
+
+    if (computed.transform && computed.transform !== 'none') {
+      node.style.transform = 'none'
+    }
+
+    node.style.transition = 'none'
+    node.style.animation = 'none'
+  })
+
+  host.appendChild(clone)
+  document.body.appendChild(host)
+
+  return {
+    host,
+    clone,
+    cleanup: () => host.remove(),
+  }
+}
+
+const capturarPngEscritorio = async (element: HTMLElement) => {
+  const { host, clone, cleanup } = crearClonExportacion(element)
+  try {
+    if ('fonts' in document) {
+      await (document as Document & { fonts: FontFaceSet }).fonts.ready
+    }
+
+    await esperarImagenes(clone)
+    await esperarRender()
+
+    const width = Math.ceil(host.scrollWidth + CAPTURE_BUFFER)
+    const height = Math.ceil(host.scrollHeight + CAPTURE_BUFFER)
+
+    if (width <= 0 || height <= 0) {
+      throw new Error('No se pudo calcular el tamaño de exportación del reporte.')
+    }
+
+    const canvas = await html2canvas(host, {
+      backgroundColor: '#ffffff',
+      scale: EXPORT_PIXEL_RATIO,
+      useCORS: true,
+      allowTaint: true,
+      logging: false,
+      width,
+      height,
+      windowWidth: width,
+      windowHeight: height,
+      scrollX: 0,
+      scrollY: 0,
+    })
+
+    return canvas.toDataURL('image/png', 1)
+  } finally {
+    cleanup()
+  }
+}
 
 export const exportRowsToCsv = (rows: string[][], fileName: string) => {
   const csv = rows.map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n')
@@ -25,12 +133,7 @@ export const exportRowsToExcel = (
 }
 
 export const exportElementToImage = async (element: HTMLElement, fileName: string) => {
-  const dataUrl = await toJpeg(element, {
-    cacheBust: true,
-    backgroundColor: '#ffffff',
-    quality: 0.96,
-    pixelRatio: 2,
-  })
+  const dataUrl = await capturarPngEscritorio(element)
   const link = document.createElement('a')
   link.href = dataUrl
   link.download = fileName
@@ -38,57 +141,32 @@ export const exportElementToImage = async (element: HTMLElement, fileName: strin
 }
 
 export const exportElementToPdf = async (element: HTMLElement, fileName: string) => {
-  const imageData = await toPng(element, {
-    cacheBust: true,
-    backgroundColor: '#ffffff',
-    pixelRatio: 2,
-  })
+  const imageData = await capturarPngEscritorio(element)
 
-  const pdf = new jsPDF('p', 'mm', 'a4')
+  const pdf = new jsPDF('l', 'mm', 'a4')
   const pdfWidth = pdf.internal.pageSize.getWidth()
   const pdfHeight = pdf.internal.pageSize.getHeight()
-  const margin = 8
-  const renderWidth = pdfWidth - margin * 2
+  const margin = 10
+  const maxWidth = pdfWidth - margin * 2
+  const maxHeight = pdfHeight - margin * 2
   const img = new Image()
   img.src = imageData
   await new Promise((resolve) => {
     img.onload = resolve
   })
 
-  const renderHeight = (img.height * renderWidth) / img.width
+  const ratio = img.width / img.height
+  let drawWidth = maxWidth
+  let drawHeight = drawWidth / ratio
 
-  if (renderHeight <= pdfHeight - margin * 2) {
-    pdf.addImage(imageData, 'PNG', margin, margin, renderWidth, renderHeight)
-  } else {
-    const pageCanvas = document.createElement('canvas')
-    const pageCtx = pageCanvas.getContext('2d')
-    if (!pageCtx) return
-
-    const pxPerMm = img.width / renderWidth
-    const pageHeightPx = Math.floor((pdfHeight - margin * 2) * pxPerMm)
-    pageCanvas.width = img.width
-    pageCanvas.height = pageHeightPx
-
-    let offsetY = 0
-    let page = 0
-
-    while (offsetY < img.height) {
-      pageCtx.clearRect(0, 0, pageCanvas.width, pageCanvas.height)
-      pageCtx.drawImage(img, 0, offsetY, img.width, pageHeightPx, 0, 0, img.width, pageHeightPx)
-
-      const pageImage = pageCanvas.toDataURL('image/png')
-      if (page > 0) pdf.addPage()
-
-      const remainingPx = img.height - offsetY
-      const currentPagePx = Math.min(pageHeightPx, remainingPx)
-      const currentHeightMm = currentPagePx / pxPerMm
-
-      pdf.addImage(pageImage, 'PNG', margin, margin, renderWidth, currentHeightMm)
-
-      offsetY += pageHeightPx
-      page += 1
-    }
+  if (drawHeight > maxHeight) {
+    drawHeight = maxHeight
+    drawWidth = drawHeight * ratio
   }
+
+  const x = (pdfWidth - drawWidth) / 2
+  const y = (pdfHeight - drawHeight) / 2
+  pdf.addImage(imageData, 'PNG', x, y, drawWidth, drawHeight)
 
   pdf.save(fileName)
 }
