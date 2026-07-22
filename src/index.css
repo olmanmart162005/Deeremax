@@ -86,6 +86,13 @@ img {
   object-fit: contain;
 }
 
+.dm-logo {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
 body {
   color: var(--gray-800);
   font-family: var(--font-sans);
@@ -248,9 +255,9 @@ label {
   text-transform: uppercase;
 }
 
-.marca-top img {
+.marca-top .dm-logo {
   width: 80px;
-  height: 44px;
+  max-height: 44px;
   object-fit: contain;
   border-radius: var(--radius-sm);
   background: #fff;
@@ -390,9 +397,9 @@ label {
   min-width: 0;
 }
 
-.menu-encabezado img {
+.menu-encabezado .dm-logo {
   width: 52px;
-  height: 36px;
+  max-height: 36px;
   object-fit: contain;
   border-radius: var(--radius-sm);
   background: #fff;
@@ -1257,7 +1264,7 @@ tbody tr:nth-child(even):hover {
   margin-bottom: 12px;
 }
 
-.cabecera-hoja img {
+.cabecera-hoja .dm-logo {
   width: 120px;
   border-radius: var(--radius-sm);
   border: 1px solid #ccc;
@@ -1470,7 +1477,7 @@ tbody tr:nth-child(even):hover {
   break-inside: avoid;
 }
 
-.reporte-general-head img {
+.reporte-general-head .dm-logo {
   width: 88px;
   border: 1px solid var(--gray-300);
   border-radius: 8px;
@@ -1712,7 +1719,7 @@ tbody tr:nth-child(even):hover {
   text-align: center;
 }
 
-.carga-card img {
+.carga-card .dm-logo {
   width: 180px;
   max-width: 100%;
   border-radius: var(--radius);
@@ -2093,9 +2100,9 @@ tbody tr:nth-child(even):hover {
     display: none;
   }
 
-  .marca-top img {
+  .marca-top .dm-logo {
     width: 52px;
-    height: 36px;
+    max-height: 36px;
   }
 
   .marca-top h1 {
@@ -2358,7 +2365,7 @@ tbody tr:nth-child(even):hover {
     gap: 10px;
   }
 
-  .cabecera-hoja img {
+  .cabecera-hoja .dm-logo {
     width: 92px;
   }
 
@@ -2448,7 +2455,7 @@ tbody tr:nth-child(even):hover {
     padding: 5px 6px;
   }
 
-  .cabecera-hoja img {
+  .cabecera-hoja .dm-logo {
     width: 82px;
   }
 }

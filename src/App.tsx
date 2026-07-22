@@ -71,6 +71,7 @@ import {
   exportRowsToExcel,
 } from './services/exporters'
 import { ReporteEmpaque } from './components/ReporteEmpaque'
+import { Logo } from './components/Logo'
 import {
   exportarReporteEmpaqueExcel,
   exportarReporteEmpaquePDF,
@@ -369,14 +370,13 @@ function PantallaLogin() {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.55, ease: 'easeOut' }}
       >
-        <motion.img
-          className="brand-logo"
-          src="/logoDeereMax.jpeg"
-          alt="DeereMax"
+        <motion.div
           initial={{ opacity: 0, scale: 0.92 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.1, duration: 0.45 }}
-        />
+        >
+          <Logo className="brand-logo" alt="DeereMax" />
+        </motion.div>
         <p className="login-caption">Bienvenido nuevamente</p>
         <h1>Ervin Martínez</h1>
         <p className="login-tagline">Soluciones que cultivan el futuro.</p>
@@ -1775,7 +1775,7 @@ function App() {
     return (
       <div className="pantalla-carga">
         <div className="carga-card">
-          <img src="/logoDeereMax.jpeg" alt="DeereMax" />
+          <Logo alt="DeereMax" />
           <h2>Configuracion pendiente en Netlify</h2>
           <p>
             Agrega las variables VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en Site settings &gt; Environment variables.
@@ -1791,7 +1791,7 @@ function App() {
     return (
       <div className="pantalla-carga">
         <div className="carga-card">
-          <img src="/logoDeereMax.jpeg" alt="DeereMax" />
+          <Logo alt="DeereMax" />
           <h2>Iniciando sesión...</h2>
           <p>Preparando el sistema, por favor espere.</p>
         </div>
@@ -1806,7 +1806,7 @@ function App() {
           <Menu size={18} />
         </button>
         <div className="marca-top">
-          <img src="/logoDeereMax.jpeg" alt="DeereMax" />
+          <Logo alt="DeereMax" />
           <div className="marca-top-texto">
             <p className="ruta-top">{metaVista.breadcrumb}</p>
             <h1>{metaVista.modulo}</h1>
@@ -1836,7 +1836,7 @@ function App() {
       <aside className={`menu-lateral ${menuAbierto ? 'abierto' : ''} print-hidden`}>
         <div className="menu-encabezado">
           <div className="menu-brand-block">
-            <img src="/logoDeereMax.jpeg" alt="DeereMax" />
+            <Logo alt="DeereMax" />
             <div>
               <strong>DeereMax ERP</strong>
               <span>Operaciones DeereMax</span>
@@ -2573,7 +2573,7 @@ function App() {
 
             <section id="zona-reporte-general" className="tarjeta-panel reporte-general-ejecutivo">
               <header className="reporte-general-head">
-                <img src="/logoDeereMax.jpeg" alt="DeereMax" />
+                <Logo alt="DeereMax" />
                 <div>
                   <h3>DEEREMAX</h3>
                   <h4>REPORTE GENERAL SEMANAL DE PRODUCTORES</h4>

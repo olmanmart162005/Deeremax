@@ -4,6 +4,7 @@ import { Download } from 'lucide-react'
 import type { Productor, Reporte } from '../types'
 import { computeDailyTotals, computeWeeklyTotals, weeklyRendimiento } from '../utils/report'
 import { exportarReporteEmpaquePNG } from '../services/reporteEmpaque'
+import { Logo } from './Logo'
 
 type Props = {
   reporte: Reporte
@@ -63,7 +64,7 @@ export function ReporteEmpaque({
       ) : null}
 
       <header className="cabecera-hoja cabecera-excel">
-        <img src="/logoDeereMax.jpeg" alt="DeereMax" />
+        <Logo alt="DeereMax" />
         <div className="datos-cabecera-excel">
           <h3>DEEREMAX</h3>
           <p className="titulo-reporte-principal">REPORTE DE EMPAQUE</p>
