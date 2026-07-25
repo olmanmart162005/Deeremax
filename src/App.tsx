@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { addDays, format, getWeek, getWeekYear, parseISO, startOfMonth, startOfYear } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   BarChart3,
   CalendarDays,
+  ClipboardList,
   Crown,
   Download,
   Eye,
@@ -70,6 +71,12 @@ import {
   exportRowsToCsv,
   exportRowsToExcel,
 } from './services/exporters'
+import {
+  normalizarEventoAuditoria,
+  registrarEventoAuditoria,
+  type EventoAuditoria,
+  type TipoEventoAuditoria,
+} from './services/auditoria'
 import { ReporteEmpaque } from './components/ReporteEmpaque'
 import { Logo } from './components/Logo'
 import {
@@ -89,10 +96,12 @@ import { supabaseConfigError } from './lib/supabase'
 
 type FiltroRango = 'semana' | 'mes' | 'anio' | 'personalizado' | 'todo'
 type DashboardRango = 'hoy' | 'semana' | 'mes' | 'anio' | 'personalizado'
-type Vista = 'inicio' | 'productores' | 'captura' | 'reportes' | 'admin'
+type Vista = 'inicio' | 'productores' | 'captura' | 'reportes' | 'auditoria' | 'admin'
 type Toast = { kind: 'success' | 'error'; text: string }
 type FiltroEstadoProductor = 'todos' | 'activos' | 'inactivos'
 type OrdenProductor = 'nombre' | 'codigo' | 'creacion'
+type OrdenAuditoriaColumna = 'fecha' | 'hora' | 'usuario' | 'modulo' | 'accion' | 'descripcion'
+type OrdenAuditoriaDireccion = 'asc' | 'desc'
 
 type FormProductor = {
   id: string | null
@@ -103,6 +112,17 @@ type FormProductor = {
   sector: string
   observaciones: string
   activo: boolean
+}
+
+type FilaReporteGeneralSemanal = {
+  productorId: string
+  productor: string
+  totalCestasEnviadas: number
+  totalAmericanasEmpacadas: number
+  totalHinduEmpacadas: number
+  totalEmpacadas: number
+  fechaInicio: string
+  fechaFin: string
 }
 
 type DeferredInstallPromptEvent = Event & {
@@ -137,6 +157,7 @@ const META_VISTA: Record<Vista, { modulo: string; breadcrumb: string; cargo: str
   productores: { modulo: 'Gestión de Productores', breadcrumb: 'Inicio / Productores', cargo: 'Productores' },
   captura: { modulo: 'Captura Semanal', breadcrumb: 'Inicio / Captura', cargo: 'Producción' },
   reportes: { modulo: 'Reportes', breadcrumb: 'Inicio / Reportes', cargo: 'Análisis' },
+  auditoria: { modulo: 'Auditoría', breadcrumb: 'Inicio / Auditoría', cargo: 'Trazabilidad' },
   admin: { modulo: 'Administración', breadcrumb: 'Inicio / Administración', cargo: 'Administración' },
 }
 
@@ -325,6 +346,41 @@ const normalizarReporte = (row: Record<string, unknown>): Reporte => {
   }
 }
 
+const normalizarFilaReporteGeneralSemanal = (row: Record<string, unknown>): FilaReporteGeneralSemanal => {
+  return {
+    productorId: String(row.productor_id ?? ''),
+    productor: String(row.productor ?? '').trim() || 'Sin nombre',
+    totalCestasEnviadas: toNumber(row.total_cestas_enviadas as number | string | null),
+    totalAmericanasEmpacadas: toNumber(row.total_americanas_empacadas as number | string | null),
+    totalHinduEmpacadas: toNumber(row.total_hindu_empacadas as number | string | null),
+    totalEmpacadas: toNumber(row.total_empacadas as number | string | null),
+    fechaInicio: String(row.fecha_inicio ?? ''),
+    fechaFin: String(row.fecha_fin ?? ''),
+  }
+}
+
+const construirFilasGeneralesDesdeReportes = (
+  reportes: Reporte[],
+  productores: Productor[],
+): FilaReporteGeneralSemanal[] => {
+  return reportes
+    .map((rep) => {
+      const prod = productores.find((item) => item.id === rep.productor_id)
+      const total = computeWeeklyTotals(rep)
+      return {
+        productorId: rep.productor_id,
+        productor: prod?.nombre ?? 'Sin nombre',
+        totalCestasEnviadas: total.cestasA + total.cestasH,
+        totalAmericanasEmpacadas: total.totalAmericana,
+        totalHinduEmpacadas: total.totalHindu,
+        totalEmpacadas: total.totalAmericana + total.totalHindu,
+        fechaInicio: rep.fecha_inicio,
+        fechaFin: rep.fecha_fin,
+      }
+    })
+    .sort((a, b) => a.productor.localeCompare(b.productor, 'es'))
+}
+
 function PantallaLogin() {
   const [correo, setCorreo] = useState('')
   const [contrasena, setContrasena] = useState('')
@@ -486,9 +542,21 @@ function App() {
   const [productorActivoId, setProductorActivoId] = useState('')
   const [fechaReporteProductor, setFechaReporteProductor] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [fechaGeneral, setFechaGeneral] = useState(format(new Date(), 'yyyy-MM-dd'))
+  const [rpcReporteGeneralDisponible, setRpcReporteGeneralDisponible] = useState(true)
   const [filtroDashboard, setFiltroDashboard] = useState<DashboardRango>('semana')
   const [dashboardDesde, setDashboardDesde] = useState(format(new Date(), 'yyyy-MM-01'))
   const [dashboardHasta, setDashboardHasta] = useState(format(new Date(), 'yyyy-MM-dd'))
+  const [auditoriaTexto, setAuditoriaTexto] = useState('')
+  const [auditoriaUsuario, setAuditoriaUsuario] = useState('todos')
+  const [auditoriaModulo, setAuditoriaModulo] = useState('todos')
+  const [auditoriaTipo, setAuditoriaTipo] = useState<'todos' | TipoEventoAuditoria>('todos')
+  const [auditoriaDesde, setAuditoriaDesde] = useState('')
+  const [auditoriaHasta, setAuditoriaHasta] = useState('')
+  const [auditoriaOrdenColumna, setAuditoriaOrdenColumna] = useState<OrdenAuditoriaColumna>('fecha')
+  const [auditoriaOrdenDireccion, setAuditoriaOrdenDireccion] = useState<OrdenAuditoriaDireccion>('desc')
+  const [auditoriaPagina, setAuditoriaPagina] = useState(1)
+  const auditoriaTamPagina = 15
+  const [auditoriaTablaDisponible, setAuditoriaTablaDisponible] = useState(true)
 
   const [modalProductorAbierto, setModalProductorAbierto] = useState(false)
   const [formProductor, setFormProductor] = useState<FormProductor>({
@@ -505,6 +573,7 @@ function App() {
   const [confirmacionEliminar, setConfirmacionEliminar] = useState<Productor | null>(null)
 
   const [toast, setToast] = useState<Toast | null>(null)
+  const sesionPreviaRef = useRef<string | null>(null)
 
   useEffect(() => {
     const timer = window.setInterval(() => setAhora(new Date()), 1000)
@@ -560,16 +629,46 @@ function App() {
 
     supabase.auth.getSession().then(({ data }) => {
       setSesion(data.session)
+      sesionPreviaRef.current = data.session?.user.id ?? null
     })
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, updatedSession) => {
+    } = supabase.auth.onAuthStateChange((event, updatedSession) => {
       setSesion(updatedSession)
+
+      if (event === 'SIGNED_IN' && updatedSession) {
+        const actualId = updatedSession.user.id
+        if (sesionPreviaRef.current !== actualId) {
+          void registrarEventoAuditoria({
+            tipo: 'auth',
+            accion: 'LOGIN',
+            descripcion: 'Inicio de sesión exitoso.',
+            modulo: 'Autenticación',
+            usuarioId: actualId,
+            usuarioEmail: updatedSession.user.email ?? null,
+            usuarioNombre: formatearNombreUsuario(updatedSession.user.email ?? 'usuario@deeremax.app'),
+          })
+        }
+      }
+
+      if (event === 'SIGNED_OUT' && sesionPreviaRef.current) {
+        void registrarEventoAuditoria({
+          tipo: 'auth',
+          accion: 'LOGOUT',
+          descripcion: 'Cierre de sesión.',
+          modulo: 'Autenticación',
+          usuarioId: sesionPreviaRef.current,
+          usuarioEmail: sesion?.user.email ?? null,
+          usuarioNombre: formatearNombreUsuario(sesion?.user.email ?? 'usuario@deeremax.app'),
+        })
+      }
+
+      sesionPreviaRef.current = updatedSession?.user.id ?? null
     })
 
     return () => subscription.unsubscribe()
-  }, [])
+  }, [sesion?.user.email])
 
   const qProductores = useQuery({
     queryKey: ['productores', sesion?.user.id],
@@ -622,6 +721,83 @@ function App() {
       return (data ?? []).map((row) => normalizarReporte(row as Record<string, unknown>))
     },
   })
+
+  const qReporteGeneralSemanal = useQuery<FilaReporteGeneralSemanal[]>({
+    queryKey: ['reporte-general-semanal', sesion?.user.id, fechaGeneral],
+    enabled: !!sesion && vista === 'reportes' && rpcReporteGeneralDisponible,
+    retry: false,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const criterio = obtenerSemanaAnio(fechaGeneral)
+      const { data, error } = await supabase.rpc('reporte_general_semanal_productores', {
+        p_semana: criterio.semana,
+        p_anio: criterio.anio,
+      })
+
+      if (error) {
+        const code = String((error as { code?: string }).code ?? '')
+        const message = String(error.message ?? '').toLowerCase()
+        const rpcNoDisponible = code === 'PGRST202' || message.includes('could not find the function')
+        if (rpcNoDisponible) {
+          setRpcReporteGeneralDisponible(false)
+          return []
+        }
+
+        logErrorSupabase('Consulta SQL reporte general semanal', error)
+        return []
+      }
+
+      const registros = (data ?? []) as Record<string, unknown>[]
+      return registros
+        .map((row) => normalizarFilaReporteGeneralSemanal(row))
+        .sort((a, b) => a.productor.localeCompare(b.productor, 'es'))
+    },
+  })
+
+  const qAuditoria = useQuery<EventoAuditoria[]>({
+    queryKey: ['auditoria-eventos', sesion?.user.id],
+    enabled: !!sesion && vista === 'auditoria' && auditoriaTablaDisponible,
+    refetchOnWindowFocus: false,
+    retry: false,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('auditoria_eventos')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(5000)
+
+      if (error) {
+        const code = String((error as { code?: string }).code ?? '')
+        const message = String(error.message ?? '').toLowerCase()
+        if (code === '42P01' || message.includes('relation') || message.includes('does not exist')) {
+          setAuditoriaTablaDisponible(false)
+          return []
+        }
+
+        logErrorSupabase('Consulta auditoria', error)
+        return []
+      }
+
+      return (data ?? []).map((row) => normalizarEventoAuditoria(row as Record<string, unknown>))
+    },
+  })
+
+  const registrarEvento = async (
+    input: Omit<Parameters<typeof registrarEventoAuditoria>[0], 'usuarioId' | 'usuarioEmail' | 'usuarioNombre'>,
+  ) => {
+    if (!sesion) return
+
+    await registrarEventoAuditoria({
+      ...input,
+      usuarioId: sesion.user.id,
+      usuarioEmail: sesion.user.email ?? null,
+      usuarioNombre: formatearNombreUsuario(sesion.user.email ?? 'usuario@deeremax.app'),
+    })
+
+    if (vista === 'auditoria') {
+      void qAuditoria.refetch()
+    }
+  }
 
   const esAdmin = useMemo(() => {
     const email = sesion?.user.email?.toLowerCase()
@@ -922,30 +1098,6 @@ function App() {
       }
     })
 
-    const actividad = [
-      ...reportesOrdenados.slice(0, 4).map((rep) => ({
-        id: `nuevo-${rep.id}`,
-        fecha: rep.created_at,
-        texto: 'Nuevo reporte registrado',
-      })),
-      ...productores
-        .slice()
-        .sort((a, b) => b.created_at.localeCompare(a.created_at))
-        .slice(0, 3)
-        .map((item) => ({
-          id: `productor-${item.id}`,
-          fecha: item.created_at,
-          texto: `Nuevo productor agregado: ${item.nombre}`,
-        })),
-      ...reportesOrdenados.slice(0, 3).map((rep) => ({
-        id: `actualizado-${rep.id}`,
-        fecha: rep.created_at,
-        texto: 'Reporte actualizado',
-      })),
-    ]
-      .sort((a, b) => b.fecha.localeCompare(a.fecha))
-      .slice(0, 8)
-
     const previo = resumenSimple(reportesAnteriores)
 
     const comparar = (actual: number, anterior: number) => {
@@ -987,7 +1139,6 @@ function App() {
       sparkline,
       ultimosReportes,
       top5,
-      actividad,
     }
   }, [
     dashboardDesde,
@@ -997,6 +1148,96 @@ function App() {
     qProductores.data,
     qReportesGlobal.data,
   ])
+
+  const auditoriaRegistros = useMemo(() => qAuditoria.data ?? [], [qAuditoria.data])
+
+  const auditoriaUsuariosDisponibles = useMemo(() => {
+    return Array.from(
+      new Set(
+        auditoriaRegistros
+          .map((item) => item.usuarioNombre || item.usuarioEmail || 'Usuario desconocido')
+          .filter(Boolean),
+      ),
+    ).sort((a, b) => a.localeCompare(b, 'es'))
+  }, [auditoriaRegistros])
+
+  const auditoriaModulosDisponibles = useMemo(() => {
+    return Array.from(new Set(auditoriaRegistros.map((item) => item.modulo).filter(Boolean))).sort((a, b) =>
+      a.localeCompare(b, 'es'),
+    )
+  }, [auditoriaRegistros])
+
+  const auditoriaFiltrada = useMemo(() => {
+    const texto = auditoriaTexto.trim().toLowerCase()
+    return auditoriaRegistros.filter((item) => {
+      const fecha = item.createdAt.slice(0, 10)
+      const usuario = item.usuarioNombre || item.usuarioEmail || 'Usuario desconocido'
+
+      const coincideTexto =
+        !texto ||
+        item.descripcion.toLowerCase().includes(texto) ||
+        item.accion.toLowerCase().includes(texto) ||
+        item.modulo.toLowerCase().includes(texto) ||
+        usuario.toLowerCase().includes(texto)
+
+      const coincideUsuario = auditoriaUsuario === 'todos' || usuario === auditoriaUsuario
+      const coincideModulo = auditoriaModulo === 'todos' || item.modulo === auditoriaModulo
+      const coincideTipo = auditoriaTipo === 'todos' || item.tipo === auditoriaTipo
+      const coincideDesde = !auditoriaDesde || fecha >= auditoriaDesde
+      const coincideHasta = !auditoriaHasta || fecha <= auditoriaHasta
+
+      return coincideTexto && coincideUsuario && coincideModulo && coincideTipo && coincideDesde && coincideHasta
+    })
+  }, [auditoriaDesde, auditoriaHasta, auditoriaModulo, auditoriaRegistros, auditoriaTexto, auditoriaTipo, auditoriaUsuario])
+
+  const auditoriaOrdenada = useMemo(() => {
+    const sorted = [...auditoriaFiltrada]
+    sorted.sort((a, b) => {
+      let left = ''
+      let right = ''
+
+      if (auditoriaOrdenColumna === 'fecha') {
+        left = a.createdAt.slice(0, 10)
+        right = b.createdAt.slice(0, 10)
+      } else if (auditoriaOrdenColumna === 'hora') {
+        left = format(parseISO(a.createdAt), 'HH:mm:ss')
+        right = format(parseISO(b.createdAt), 'HH:mm:ss')
+      } else if (auditoriaOrdenColumna === 'usuario') {
+        left = a.usuarioNombre || a.usuarioEmail || ''
+        right = b.usuarioNombre || b.usuarioEmail || ''
+      } else if (auditoriaOrdenColumna === 'modulo') {
+        left = a.modulo
+        right = b.modulo
+      } else if (auditoriaOrdenColumna === 'accion') {
+        left = a.accion
+        right = b.accion
+      } else {
+        left = a.descripcion
+        right = b.descripcion
+      }
+
+      const result = left.localeCompare(right, 'es')
+      return auditoriaOrdenDireccion === 'asc' ? result : -result
+    })
+    return sorted
+  }, [auditoriaFiltrada, auditoriaOrdenColumna, auditoriaOrdenDireccion])
+
+  const auditoriaTotalPaginas = Math.max(1, Math.ceil(auditoriaOrdenada.length / auditoriaTamPagina))
+
+  const auditoriaPaginada = useMemo(() => {
+    const start = (auditoriaPagina - 1) * auditoriaTamPagina
+    return auditoriaOrdenada.slice(start, start + auditoriaTamPagina)
+  }, [auditoriaOrdenada, auditoriaPagina])
+
+  useEffect(() => {
+    setAuditoriaPagina(1)
+  }, [auditoriaTexto, auditoriaUsuario, auditoriaModulo, auditoriaTipo, auditoriaDesde, auditoriaHasta])
+
+  useEffect(() => {
+    if (auditoriaPagina > auditoriaTotalPaginas) {
+      setAuditoriaPagina(auditoriaTotalPaginas)
+    }
+  }, [auditoriaPagina, auditoriaTotalPaginas])
 
   const productoresVisibles = useMemo(() => {
     return filtrarYOrdenarProductores(
@@ -1099,38 +1340,26 @@ function App() {
     }
   }, [reporteEnEdicion, fechaDetalleSeleccionada, detalleEnEdicionId])
 
-  const filasGeneralSemanal = useMemo(() => {
+  const filasGeneralSemanal = useMemo<FilaReporteGeneralSemanal[]>(() => {
     const productores = qProductores.data ?? []
     const criterio = obtenerSemanaAnio(fechaGeneral)
     const reportesSemana = (qReportesGlobal.data ?? []).filter(
       (item) => item.semana === criterio.semana && item.anio === criterio.anio,
     )
 
-    return reportesSemana.map((rep) => {
-      const prod = productores.find((item) => item.id === rep.productor_id)
-      const total = computeWeeklyTotals(rep)
-      const rend = weeklyRendimiento(rep)
-      const estado = infoRendimiento(rend.rendimientoA, rend.rendimientoH)
-      return {
-        id: rep.id,
-        productor: prod?.nombre ?? 'Sin nombre',
-        totalCajas: total.totalBoxes,
-        rendimientoA: rend.rendimientoA,
-        rendimientoH: rend.rendimientoH,
-        estado: estado.label,
-      }
-    })
-  }, [fechaGeneral, qProductores.data, qReportesGlobal.data])
+    if ((qReporteGeneralSemanal.data ?? []).length > 0) {
+      return qReporteGeneralSemanal.data ?? []
+    }
+
+    return construirFilasGeneralesDesdeReportes(reportesSemana, productores)
+  }, [fechaGeneral, qProductores.data, qReporteGeneralSemanal.data, qReportesGlobal.data])
 
   const reporteGeneralMeta = useMemo(() => {
     const criterio = obtenerSemanaAnio(fechaGeneral)
-    const reportesSemana = (qReportesGlobal.data ?? []).filter(
-      (item) => item.semana === criterio.semana && item.anio === criterio.anio,
-    )
 
     const fallbackRange = getWeekRange(fechaGeneral)
-    const fechasInicio = reportesSemana.map((item) => item.fecha_inicio)
-    const fechasFin = reportesSemana.map((item) => item.fecha_fin)
+    const fechasInicio = filasGeneralSemanal.map((item) => item.fechaInicio).filter(Boolean)
+    const fechasFin = filasGeneralSemanal.map((item) => item.fechaFin).filter(Boolean)
 
     const fechaInicio = fechasInicio.length > 0
       ? [...fechasInicio].sort((a, b) => a.localeCompare(b))[0]
@@ -1139,7 +1368,10 @@ function App() {
       ? [...fechasFin].sort((a, b) => b.localeCompare(a))[0]
       : fallbackRange.weekEnd
 
-    const totalCajas = filasGeneralSemanal.reduce((acc, fila) => acc + fila.totalCajas, 0)
+    const totalCestasEnviadas = filasGeneralSemanal.reduce((acc, fila) => acc + fila.totalCestasEnviadas, 0)
+    const totalAmericanasEmpacadas = filasGeneralSemanal.reduce((acc, fila) => acc + fila.totalAmericanasEmpacadas, 0)
+    const totalHinduEmpacadas = filasGeneralSemanal.reduce((acc, fila) => acc + fila.totalHinduEmpacadas, 0)
+    const totalEmpacadas = filasGeneralSemanal.reduce((acc, fila) => acc + fila.totalEmpacadas, 0)
     const fechaGeneracion = format(new Date(), "d 'de' MMMM 'de' yyyy", { locale: es })
     const periodoDesde = format(parseISO(fechaInicio), "d 'de' MMMM", { locale: es })
     const periodoHasta = format(parseISO(fechaFin), "d 'de' MMMM 'de' yyyy", { locale: es })
@@ -1149,7 +1381,10 @@ function App() {
       anio: criterio.anio,
       fechaInicio,
       fechaFin,
-      totalCajas,
+      totalCestasEnviadas,
+      totalAmericanasEmpacadas,
+      totalHinduEmpacadas,
+      totalEmpacadas,
       totalProductores: filasGeneralSemanal.length,
       periodoTexto: `PERIODO DEL ${periodoDesde.toUpperCase()} AL ${periodoHasta.toUpperCase()}`,
       fechaGeneracion: fechaGeneracion.charAt(0).toUpperCase() + fechaGeneracion.slice(1),
@@ -1275,6 +1510,17 @@ function App() {
     }
 
     await qProductores.refetch()
+    const accion = formProductor.id ? 'PRODUCTOR_ACTUALIZADO' : 'PRODUCTOR_CREADO'
+    const descripcion = formProductor.id
+      ? `Se actualizo el productor ${formProductor.nombre.trim().toUpperCase()}.`
+      : `Se creo el productor ${formProductor.nombre.trim().toUpperCase()}.`
+    await registrarEvento({
+      tipo: formProductor.id ? 'update' : 'create',
+      accion,
+      descripcion,
+      modulo: 'Productores',
+      metadata: { productorId: formProductor.id ?? null, codigo: normalizarCodigo(formProductor.codigo) },
+    })
     notificarExito(formProductor.id ? 'Productor actualizado con exito.' : 'Productor creado con exito.')
     setModalProductorAbierto(false)
     resetFormProductor()
@@ -1304,6 +1550,13 @@ function App() {
     }
 
     await qProductores.refetch()
+    await registrarEvento({
+      tipo: 'update',
+      accion: 'PRODUCTOR_ESTADO_ACTUALIZADO',
+      descripcion: `Se ${estaActivo(item) ? 'desactivo' : 'activo'} el productor ${item.nombre}.`,
+      modulo: 'Productores',
+      metadata: { productorId: item.id, activo: !estaActivo(item) },
+    })
     notificarExito('Estado actualizado.')
   }
 
@@ -1320,6 +1573,13 @@ function App() {
       }
 
       await qProductores.refetch()
+      await registrarEvento({
+        tipo: 'update',
+        accion: 'PRODUCTOR_DESACTIVADO',
+        descripcion: `Se desactivo el productor ${item.nombre} porque tiene reportes asociados.`,
+        modulo: 'Productores',
+        metadata: { productorId: item.id },
+      })
       notificarExito('El productor tiene reportes. Fue desactivado, no eliminado.')
       return
     }
@@ -1332,6 +1592,13 @@ function App() {
     }
 
     await qProductores.refetch()
+    await registrarEvento({
+      tipo: 'delete',
+      accion: 'PRODUCTOR_ELIMINADO',
+      descripcion: `Se elimino el productor ${item.nombre}.`,
+      modulo: 'Productores',
+      metadata: { productorId: item.id },
+    })
     notificarExito('Productor eliminado correctamente.')
   }
 
@@ -1455,6 +1722,13 @@ function App() {
       }
 
       setRetroalimentacion('Reporte actualizado correctamente.')
+      await registrarEvento({
+        tipo: 'update',
+        accion: 'REPORTE_ACTUALIZADO',
+        descripcion: `Se actualizo el reporte semanal del productor ${productorActivo?.nombre ?? 'N/A'}.`,
+        modulo: 'Captura',
+        metadata: { reporteId: reporteEnEdicion.id, productorId: productorActivoId },
+      })
       notificarExito('Reporte actualizado correctamente.')
       return
     }
@@ -1544,6 +1818,16 @@ function App() {
     if (!resumenActualizado) return
 
     await Promise.all([qReportesProductor.refetch(), qReportesGlobal.refetch()])
+    if (vista === 'reportes' && rpcReporteGeneralDisponible) {
+      await qReporteGeneralSemanal.refetch()
+    }
+    await registrarEvento({
+      tipo: existente?.id ? 'update' : 'create',
+      accion: existente?.id ? 'REPORTE_SEMANAL_ACTUALIZADO' : 'REPORTE_SEMANAL_CREADO',
+      descripcion: `${existente?.id ? 'Se actualizo' : 'Se creo'} un reporte semanal para ${productorActivo?.nombre ?? 'N/A'}.`,
+      modulo: 'Captura',
+      metadata: { reporteId: reporte.id, productorId: productorActivoId, semana: semanaAnio.semana, anio: semanaAnio.anio },
+    })
     setRetroalimentacion('Captura guardada con exito.')
     notificarExito('Captura guardada con exito.')
     resetCaptura()
@@ -1567,6 +1851,16 @@ function App() {
     }
 
     await Promise.all([qReportesProductor.refetch(), qReportesGlobal.refetch()])
+    if (vista === 'reportes' && rpcReporteGeneralDisponible) {
+      await qReporteGeneralSemanal.refetch()
+    }
+    await registrarEvento({
+      tipo: 'delete',
+      accion: 'REPORTE_SEMANAL_ELIMINADO',
+      descripcion: 'Se elimino un reporte semanal completo.',
+      modulo: 'Captura',
+      metadata: { reporteId },
+    })
     notificarExito('Reporte semanal eliminado.')
   }
 
@@ -1624,44 +1918,72 @@ function App() {
     })
 
     exportRowsToCsv(filas, `${nombre}.csv`)
+    void registrarEvento({
+      tipo: 'export',
+      accion: 'EXPORT_CSV_REPORTE_PRODUCTOR',
+      descripcion: `Se exporto un CSV del reporte por productor (${nombre}).`,
+      modulo: 'Reportes',
+      metadata: { archivo: `${nombre}.csv`, filas: filas.length - 1 },
+    })
     notificarExito('CSV exportado con exito.')
   }
 
-  const exportarExcel = (reportes: Reporte[], nombre: string) => {
-    if (reportes.length === 0) {
+  const exportarCsvGeneral = (filas: FilaReporteGeneralSemanal[], nombre: string) => {
+    if (filas.length === 0) {
       notificarError('No hay datos para exportar.')
       return
     }
 
-    const mapaProductores = new Map((qProductores.data ?? []).map((item) => [item.id, item.nombre]))
-    const filas: Array<Record<string, string | number>> = []
+    const rows = [
+      [
+        'Productor',
+        'Total de Cestas Enviadas',
+        'Total de Americanas Empacadas',
+        'Total de Hindú Empacadas',
+        'Total Empacadas',
+      ],
+      ...filas.map((fila) => [
+        fila.productor,
+        String(fila.totalCestasEnviadas),
+        String(fila.totalAmericanasEmpacadas),
+        String(fila.totalHinduEmpacadas),
+        String(fila.totalEmpacadas),
+      ]),
+    ]
 
-    reportes.forEach((rep) => {
-      rep.detalle_reporte.forEach((detalle) => {
-        const calc = computeDailyTotals(detalle)
-        const estado = infoRendimiento(calc.rendimientoA, calc.rendimientoH)
-        filas.push({
-          Productor: mapaProductores.get(rep.productor_id) ?? 'N/A',
-          SemanaInicio: rep.fecha_inicio,
-          SemanaFin: rep.fecha_fin,
-          Fecha: detalle.fecha,
-          CestasA: detalle.cestas_a,
-          CestasH: detalle.cestas_h,
-          A4kg: detalle.americana_4,
-          A5kg: detalle.americana_5,
-          A7kg: detalle.americana_7,
-          H4kg: detalle.hindu_4,
-          H5kg: detalle.hindu_5,
-          H7kg: detalle.hindu_7,
-          TotalCajas: calc.totalBoxes,
-          RendimientoA: Number(calc.rendimientoA.toFixed(2)),
-          RendimientoH: Number(calc.rendimientoH.toFixed(2)),
-          Estado: estado.label,
-        })
-      })
+    exportRowsToCsv(rows, `${nombre}.csv`)
+    void registrarEvento({
+      tipo: 'export',
+      accion: 'EXPORT_CSV_REPORTE_GENERAL',
+      descripcion: `Se exporto un CSV del reporte general semanal (${nombre}).`,
+      modulo: 'Reportes',
+      metadata: { archivo: `${nombre}.csv`, filas: filas.length },
     })
+    notificarExito('CSV exportado con exito.')
+  }
 
-    exportRowsToExcel(filas, `${nombre}.xlsx`)
+  const exportarExcelGeneral = (filas: FilaReporteGeneralSemanal[], nombre: string) => {
+    if (filas.length === 0) {
+      notificarError('No hay datos para exportar.')
+      return
+    }
+
+    const rows = filas.map((fila) => ({
+      Productor: fila.productor,
+      TotalCestasEnviadas: fila.totalCestasEnviadas,
+      TotalAmericanasEmpacadas: fila.totalAmericanasEmpacadas,
+      TotalHinduEmpacadas: fila.totalHinduEmpacadas,
+      TotalEmpacadas: fila.totalEmpacadas,
+    }))
+
+    exportRowsToExcel(rows, `${nombre}.xlsx`, 'Reporte General Semanal')
+    void registrarEvento({
+      tipo: 'export',
+      accion: 'EXPORT_EXCEL_REPORTE_GENERAL',
+      descripcion: `Se exporto un Excel del reporte general semanal (${nombre}).`,
+      modulo: 'Reportes',
+      metadata: { archivo: `${nombre}.xlsx`, filas: filas.length },
+    })
     notificarExito('Excel exportado con exito.')
   }
 
@@ -1669,6 +1991,13 @@ function App() {
     const element = document.getElementById(zoneId)
     if (!element) return
     await exportElementToPdf(element, `${nombre}.pdf`)
+    void registrarEvento({
+      tipo: 'export',
+      accion: 'EXPORT_PDF',
+      descripcion: `Se exporto un PDF (${nombre}).`,
+      modulo: 'Reportes',
+      metadata: { archivo: `${nombre}.pdf`, zona: zoneId },
+    })
     notificarExito('PDF exportado con exito.')
   }
 
@@ -1676,6 +2005,133 @@ function App() {
     const element = document.getElementById(zoneId)
     if (!element) return
     await exportElementToImage(element, `${nombre}.png`)
+    void registrarEvento({
+      tipo: 'export',
+      accion: 'EXPORT_PNG',
+      descripcion: `Se exporto un PNG (${nombre}).`,
+      modulo: 'Reportes',
+      metadata: { archivo: `${nombre}.png`, zona: zoneId },
+    })
+    notificarExito('PNG exportado con exito.')
+  }
+
+  const alternarOrdenAuditoria = (columna: OrdenAuditoriaColumna) => {
+    if (auditoriaOrdenColumna === columna) {
+      setAuditoriaOrdenDireccion((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+
+    setAuditoriaOrdenColumna(columna)
+    setAuditoriaOrdenDireccion('asc')
+  }
+
+  const formatoFechaAuditoria = (iso: string) => format(parseISO(iso), 'yyyy-MM-dd')
+  const formatoHoraAuditoria = (iso: string) => format(parseISO(iso), 'HH:mm:ss')
+
+  const infoTipoAuditoria = (tipo: TipoEventoAuditoria) => {
+    if (tipo === 'create') return { label: 'Crear', className: 'auditoria-tipo-create' }
+    if (tipo === 'update') return { label: 'Actualizar', className: 'auditoria-tipo-update' }
+    if (tipo === 'delete') return { label: 'Eliminar', className: 'auditoria-tipo-delete' }
+    if (tipo === 'auth') return { label: 'Acceso', className: 'auditoria-tipo-auth' }
+    if (tipo === 'export') return { label: 'Exportar', className: 'auditoria-tipo-export' }
+    if (tipo === 'config') return { label: 'Configurar', className: 'auditoria-tipo-config' }
+    if (tipo === 'user') return { label: 'Usuario', className: 'auditoria-tipo-user' }
+    if (tipo === 'permission') return { label: 'Permisos', className: 'auditoria-tipo-permission' }
+    return { label: 'Sistema', className: 'auditoria-tipo-system' }
+  }
+
+  const iconoTipoAuditoria = (tipo: TipoEventoAuditoria) => {
+    if (tipo === 'create') return <Plus size={14} />
+    if (tipo === 'update') return <Pencil size={14} />
+    if (tipo === 'delete') return <Trash2 size={14} />
+    if (tipo === 'auth') return <LockKeyhole size={14} />
+    if (tipo === 'export') return <Download size={14} />
+    if (tipo === 'config') return <Settings size={14} />
+    if (tipo === 'user') return <Users size={14} />
+    if (tipo === 'permission') return <Power size={14} />
+    return <Activity size={14} />
+  }
+
+  const exportarAuditoriaCsv = (rows: EventoAuditoria[], nombre: string) => {
+    if (rows.length === 0) {
+      notificarError('No hay datos para exportar.')
+      return
+    }
+
+    const output = [
+      ['Fecha', 'Hora', 'Usuario', 'Modulo', 'Tipo', 'Accion', 'Descripcion'],
+      ...rows.map((item) => [
+        formatoFechaAuditoria(item.createdAt),
+        formatoHoraAuditoria(item.createdAt),
+        item.usuarioNombre || item.usuarioEmail || 'Usuario desconocido',
+        item.modulo,
+        item.tipo,
+        item.accion,
+        item.descripcion,
+      ]),
+    ]
+
+    exportRowsToCsv(output, `${nombre}.csv`)
+    void registrarEvento({
+      tipo: 'export',
+      accion: 'EXPORT_CSV_AUDITORIA',
+      descripcion: 'Se exporto el historial de auditoria a CSV.',
+      modulo: 'Auditoria',
+      metadata: { archivo: `${nombre}.csv`, filas: rows.length },
+    })
+    notificarExito('CSV exportado con exito.')
+  }
+
+  const exportarAuditoriaExcel = (rows: EventoAuditoria[], nombre: string) => {
+    if (rows.length === 0) {
+      notificarError('No hay datos para exportar.')
+      return
+    }
+
+    const output = rows.map((item) => ({
+      Fecha: formatoFechaAuditoria(item.createdAt),
+      Hora: formatoHoraAuditoria(item.createdAt),
+      Usuario: item.usuarioNombre || item.usuarioEmail || 'Usuario desconocido',
+      Modulo: item.modulo,
+      Tipo: item.tipo,
+      Accion: item.accion,
+      Descripcion: item.descripcion,
+    }))
+
+    exportRowsToExcel(output, `${nombre}.xlsx`, 'Auditoria')
+    void registrarEvento({
+      tipo: 'export',
+      accion: 'EXPORT_EXCEL_AUDITORIA',
+      descripcion: 'Se exporto el historial de auditoria a Excel.',
+      modulo: 'Auditoria',
+      metadata: { archivo: `${nombre}.xlsx`, filas: rows.length },
+    })
+    notificarExito('Excel exportado con exito.')
+  }
+
+  const exportarAuditoriaPdf = async () => {
+    const element = document.getElementById('zona-auditoria')
+    if (!element) return
+    await exportElementToPdf(element, `auditoria-${format(new Date(), 'yyyyMMdd-HHmmss')}.pdf`)
+    void registrarEvento({
+      tipo: 'export',
+      accion: 'EXPORT_PDF_AUDITORIA',
+      descripcion: 'Se exporto el historial de auditoria a PDF.',
+      modulo: 'Auditoria',
+    })
+    notificarExito('PDF exportado con exito.')
+  }
+
+  const exportarAuditoriaPng = async () => {
+    const element = document.getElementById('zona-auditoria')
+    if (!element) return
+    await exportElementToImage(element, `auditoria-${format(new Date(), 'yyyyMMdd-HHmmss')}.png`)
+    void registrarEvento({
+      tipo: 'export',
+      accion: 'EXPORT_PNG_AUDITORIA',
+      descripcion: 'Se exporto el historial de auditoria a PNG.',
+      modulo: 'Auditoria',
+    })
     notificarExito('PNG exportado con exito.')
   }
 
@@ -1695,6 +2151,24 @@ function App() {
   )
 
   const estadoPreview = infoRendimiento(preview.rendimientoA, preview.rendimientoH)
+
+  const eficienciaChartData = useMemo(() => {
+    return [...dashboardData.rendimientoPorProductor]
+      .sort((a, b) => b.rendimientoPromedio - a.rendimientoPromedio)
+      .slice(0, 15)
+  }, [dashboardData.rendimientoPorProductor])
+
+  const eficienciaLabelMaxLength = useMemo(() => {
+    return eficienciaChartData.reduce((max, item) => Math.max(max, item.nombre.length), 0)
+  }, [eficienciaChartData])
+
+  const eficienciaChartHeight = Math.max(320, eficienciaChartData.length * 36 + 44)
+  const eficienciaYAxisWidth = Math.min(240, Math.max(130, eficienciaLabelMaxLength * 7))
+
+  const formatearNombreEficiencia = (nombre: string) => {
+    if (nombre.length <= 26) return nombre
+    return `${nombre.slice(0, 25)}...`
+  }
 
   const kpiCards = [
     {
@@ -1864,12 +2338,24 @@ function App() {
           <button className={`menu-item ${vista === 'reportes' ? 'activo' : ''}`} onClick={() => { setVista('reportes'); setMenuAbierto(false) }}>
             <FileText size={16} /> Reportes
           </button>
+          <button className={`menu-item ${vista === 'auditoria' ? 'activo' : ''}`} onClick={() => { setVista('auditoria'); setMenuAbierto(false) }}>
+            <ClipboardList size={16} /> Auditoría
+          </button>
           {esAdmin ? (
             <button className={`menu-item ${vista === 'admin' ? 'activo' : ''}`} onClick={() => { setVista('admin'); setMenuAbierto(false) }}>
               <Settings size={16} /> Administración
             </button>
           ) : null}
-          <button className="menu-item menu-item-salir" onClick={() => { setMenuAbierto(false); supabase.auth.signOut() }}>
+          <button className="menu-item menu-item-salir" onClick={async () => {
+            setMenuAbierto(false)
+            await registrarEvento({
+              tipo: 'auth',
+              accion: 'LOGOUT_REQUEST',
+              descripcion: 'Usuario solicitó cierre de sesión.',
+              modulo: 'Autenticación',
+            })
+            await supabase.auth.signOut()
+          }}>
             <LogOut size={16} /> Cerrar sesión
           </button>
         </nav>
@@ -1998,14 +2484,21 @@ function App() {
 
               <article className="dashboard-panel dashboard-panel-half">
                 <h3>Eficiencia por Productor</h3>
-                <div className="h-72">
+                <div style={{ height: `${eficienciaChartHeight}px` }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={dashboardData.rendimientoPorProductor} layout="vertical" margin={{ left: 10, right: 12 }}>
+                    <BarChart data={eficienciaChartData} layout="vertical" margin={{ top: 8, right: 12, bottom: 8, left: 8 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#d9e5d7" />
-                      <XAxis type="number" />
-                      <YAxis type="category" dataKey="nombre" width={110} />
+                      <XAxis type="number" domain={[0, 'dataMax + 0.05']} tick={{ fontSize: 11 }} />
+                      <YAxis
+                        type="category"
+                        dataKey="nombre"
+                        width={eficienciaYAxisWidth}
+                        interval={0}
+                        tick={{ fontSize: 11 }}
+                        tickFormatter={formatearNombreEficiencia}
+                      />
                       <Tooltip />
-                      <Bar dataKey="rendimientoPromedio" fill="#1B5E20" radius={[0, 8, 8, 0]} />
+                      <Bar dataKey="rendimientoPromedio" fill="#1B5E20" radius={[0, 8, 8, 0]} barSize={18} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -2094,17 +2587,6 @@ function App() {
               </article>
             </section>
 
-            <article className="dashboard-panel dashboard-activity-panel">
-              <h3>Actividad del Sistema</h3>
-              <div className="grid gap-2 md:grid-cols-2">
-                {dashboardData.actividad.map((item) => (
-                  <motion.div key={item.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} className="dashboard-activity-item">
-                    <p className="text-sm font-bold text-[#1a4a22]">{item.texto}</p>
-                    <p className="text-xs text-[#5d7468]">{item.fecha.slice(0, 10)}</p>
-                  </motion.div>
-                ))}
-              </div>
-            </article>
           </section>
         ) : null}
 
@@ -2443,7 +2925,17 @@ function App() {
                               setReporteEnFocoId(rep.id)
                               setTimeout(() => {
                                 const el = document.getElementById(`hoja-reporte-${rep.id}`)
-                                if (el) void exportarReporteEmpaquePNG(el, `reporte-${productorActivo?.nombre ? productorActivo.nombre.toLowerCase().replace(/\s+/g, '-') : 'productor'}-semana-${rep.semana}-${rep.anio}.png`)
+                                if (el) {
+                                  const archivo = `reporte-${productorActivo?.nombre ? productorActivo.nombre.toLowerCase().replace(/\s+/g, '-') : 'productor'}-semana-${rep.semana}-${rep.anio}.png`
+                                  void exportarReporteEmpaquePNG(el, archivo)
+                                  void registrarEvento({
+                                    tipo: 'export',
+                                    accion: 'EXPORT_PNG_REPORTE_PRODUCTOR',
+                                    descripcion: 'Se exporto un PNG del historial semanal por productor.',
+                                    modulo: 'Captura',
+                                    metadata: { archivo, reporteId: rep.id },
+                                  })
+                                }
                               }, 100)
                             }}>PNG</button>
                             <button className="ghost" onClick={() => abrirEdicionReporte(rep)}><Pencil size={14} /> Editar</button>
@@ -2496,33 +2988,61 @@ function App() {
               <div className="acciones-linea export-actions">
                 <button
                   className="export-action-button"
-                  onClick={() => {
+                  onClick={async () => {
                     if (!reporteSemanalActivo) return
                     const el = document.getElementById('reporte-empaque-productor') as HTMLElement | null
-                    if (el) void exportarReporteEmpaquePDF(el, `reporte-productor-${llaveSemana(obtenerSemanaAnio(fechaReporteProductor).semana, obtenerSemanaAnio(fechaReporteProductor).anio)}.pdf`)
+                    if (el) {
+                      const archivo = `reporte-productor-${llaveSemana(obtenerSemanaAnio(fechaReporteProductor).semana, obtenerSemanaAnio(fechaReporteProductor).anio)}.pdf`
+                      await exportarReporteEmpaquePDF(el, archivo)
+                      await registrarEvento({
+                        tipo: 'export',
+                        accion: 'EXPORT_PDF_REPORTE_PRODUCTOR',
+                        descripcion: 'Se exporto un PDF del reporte semanal por productor.',
+                        modulo: 'Reportes',
+                        metadata: { archivo, reporteId: reporteSemanalActivo.id },
+                      })
+                    }
                   }}
                 >
                   <Download size={16} /> Exportar PDF
                 </button>
                 <button
                   className="export-action-button"
-                  onClick={() => {
+                  onClick={async () => {
                     if (!reporteSemanalActivo) return
-                    exportarReporteEmpaqueExcel(
+                    const archivo = `reporte-productor-${llaveSemana(obtenerSemanaAnio(fechaReporteProductor).semana, obtenerSemanaAnio(fechaReporteProductor).anio)}.xlsx`
+                    await exportarReporteEmpaqueExcel(
                       reporteSemanalActivo,
                       productorActivo,
-                      `reporte-productor-${llaveSemana(obtenerSemanaAnio(fechaReporteProductor).semana, obtenerSemanaAnio(fechaReporteProductor).anio)}.xlsx`,
+                      archivo,
                     )
+                    await registrarEvento({
+                      tipo: 'export',
+                      accion: 'EXPORT_EXCEL_REPORTE_PRODUCTOR',
+                      descripcion: 'Se exporto un Excel del reporte semanal por productor.',
+                      modulo: 'Reportes',
+                      metadata: { archivo, reporteId: reporteSemanalActivo.id },
+                    })
                   }}
                 >
                   <Download size={16} /> Exportar Excel
                 </button>
                 <button
                   className="export-action-button"
-                  onClick={() => {
+                  onClick={async () => {
                     if (!reporteSemanalActivo) return
                     const el = document.getElementById('reporte-empaque-productor') as HTMLElement | null
-                    if (el) void exportarReporteEmpaquePNG(el, `reporte-productor-${llaveSemana(obtenerSemanaAnio(fechaReporteProductor).semana, obtenerSemanaAnio(fechaReporteProductor).anio)}.png`)
+                    if (el) {
+                      const archivo = `reporte-productor-${llaveSemana(obtenerSemanaAnio(fechaReporteProductor).semana, obtenerSemanaAnio(fechaReporteProductor).anio)}.png`
+                      await exportarReporteEmpaquePNG(el, archivo)
+                      await registrarEvento({
+                        tipo: 'export',
+                        accion: 'EXPORT_PNG_REPORTE_PRODUCTOR',
+                        descripcion: 'Se exporto un PNG del reporte semanal por productor.',
+                        modulo: 'Reportes',
+                        metadata: { archivo, reporteId: reporteSemanalActivo.id },
+                      })
+                    }
                   }}
                 >
                   <Download size={16} /> Exportar PNG
@@ -2566,8 +3086,8 @@ function App() {
               <div className="acciones-linea export-actions">
                 <button className="export-action-button" onClick={() => exportarZonaPdf('zona-reporte-general', `reporte-general-${llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)}`)}><Download size={16} /> Exportar PDF</button>
                 <button className="export-action-button" onClick={() => void exportarZonaPng('zona-reporte-general', `reporte-general-${llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)}`)}><Download size={16} /> Exportar PNG</button>
-                <button className="export-action-button" onClick={() => exportarExcel((qReportesGlobal.data ?? []).filter((item) => llaveSemana(item.semana, item.anio) === llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)), `reporte-general-${llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)}`)}><Download size={16} /> Exportar Excel</button>
-                <button className="export-action-button" onClick={() => exportarCsv((qReportesGlobal.data ?? []).filter((item) => llaveSemana(item.semana, item.anio) === llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)), `reporte-general-${llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)}`)}><Download size={16} /> Exportar CSV</button>
+                <button className="export-action-button" onClick={() => exportarExcelGeneral(filasGeneralSemanal, `reporte-general-${llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)}`)}><Download size={16} /> Exportar Excel</button>
+                <button className="export-action-button" onClick={() => exportarCsvGeneral(filasGeneralSemanal, `reporte-general-${llaveSemana(obtenerSemanaAnio(fechaGeneral).semana, obtenerSemanaAnio(fechaGeneral).anio)}`)}><Download size={16} /> Exportar CSV</button>
               </div>
             </article>
 
@@ -2589,33 +3109,166 @@ function App() {
                   <thead>
                     <tr>
                       <th>Productor</th>
-                      <th>Total cajas</th>
-                      <th>Rendimiento Americana</th>
-                      <th>Rendimiento Hindu</th>
-                      <th>Estado</th>
-                      <th>Total semanal</th>
+                      <th>Total de Cestas Enviadas</th>
+                      <th>Total de Americanas Empacadas</th>
+                      <th>Total de Hindú Empacadas</th>
+                      <th>Total Empacadas</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filasGeneralSemanal.map((fila) => (
-                      <tr key={fila.id}>
+                      <tr key={fila.productorId}>
                         <td data-label="Productor">{fila.productor}</td>
-                        <td data-label="Total cajas">{fila.totalCajas}</td>
-                        <td data-label="Rendimiento Americana">{fila.rendimientoA.toFixed(2)}</td>
-                        <td data-label="Rendimiento Hindu">{fila.rendimientoH.toFixed(2)}</td>
-                        <td data-label="Estado">{fila.estado}</td>
-                        <td data-label="Total semanal">{fila.totalCajas}</td>
+                        <td data-label="Total de Cestas Enviadas">{fila.totalCestasEnviadas}</td>
+                        <td data-label="Total de Americanas Empacadas">{fila.totalAmericanasEmpacadas}</td>
+                        <td data-label="Total de Hindú Empacadas">{fila.totalHinduEmpacadas}</td>
+                        <td data-label="Total Empacadas">{fila.totalEmpacadas}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr>
                       <th>TOTAL</th>
-                      <th>{reporteGeneralMeta.totalCajas}</th>
-                      <th colSpan={4}></th>
+                      <th>{reporteGeneralMeta.totalCestasEnviadas}</th>
+                      <th>{reporteGeneralMeta.totalAmericanasEmpacadas}</th>
+                      <th>{reporteGeneralMeta.totalHinduEmpacadas}</th>
+                      <th>{reporteGeneralMeta.totalEmpacadas}</th>
                     </tr>
                   </tfoot>
                 </table>
+              </div>
+            </section>
+          </section>
+        ) : null}
+
+        {vista === 'auditoria' ? (
+          <section className="seccion-vista">
+            <article className="tarjeta-panel">
+              <h3>Auditoría del Sistema</h3>
+              <p className="muted">Historial completo de acciones relevantes de la plataforma.</p>
+
+              <div className="acciones-linea export-actions">
+                <button className="export-action-button" onClick={() => void exportarAuditoriaPdf()}><Download size={16} /> Exportar PDF</button>
+                <button className="export-action-button" onClick={() => void exportarAuditoriaPng()}><Download size={16} /> Exportar PNG</button>
+                <button className="export-action-button" onClick={() => exportarAuditoriaExcel(auditoriaOrdenada, `auditoria-${format(new Date(), 'yyyyMMdd-HHmmss')}`)}><Download size={16} /> Exportar Excel</button>
+                <button className="export-action-button" onClick={() => exportarAuditoriaCsv(auditoriaOrdenada, `auditoria-${format(new Date(), 'yyyyMMdd-HHmmss')}`)}><Download size={16} /> Exportar CSV</button>
+              </div>
+            </article>
+
+            <section id="zona-auditoria" className="tarjeta-panel auditoria-panel">
+              <div className="auditoria-filtros">
+                <label>
+                  Buscar
+                  <input
+                    type="search"
+                    placeholder="Descripción, acción, módulo o usuario"
+                    value={auditoriaTexto}
+                    onChange={(e) => setAuditoriaTexto(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Usuario
+                  <select value={auditoriaUsuario} onChange={(e) => setAuditoriaUsuario(e.target.value)}>
+                    <option value="todos">Todos</option>
+                    {auditoriaUsuariosDisponibles.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Módulo
+                  <select value={auditoriaModulo} onChange={(e) => setAuditoriaModulo(e.target.value)}>
+                    <option value="todos">Todos</option>
+                    {auditoriaModulosDisponibles.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Tipo de acción
+                  <select value={auditoriaTipo} onChange={(e) => setAuditoriaTipo(e.target.value as 'todos' | TipoEventoAuditoria)}>
+                    <option value="todos">Todos</option>
+                    <option value="create">Crear</option>
+                    <option value="update">Actualizar</option>
+                    <option value="delete">Eliminar</option>
+                    <option value="auth">Acceso</option>
+                    <option value="export">Exportar</option>
+                    <option value="config">Configurar</option>
+                    <option value="user">Usuario</option>
+                    <option value="permission">Permisos</option>
+                    <option value="system">Sistema</option>
+                  </select>
+                </label>
+                <label>
+                  Desde
+                  <input type="date" value={auditoriaDesde} onChange={(e) => setAuditoriaDesde(e.target.value)} />
+                </label>
+                <label>
+                  Hasta
+                  <input type="date" value={auditoriaHasta} onChange={(e) => setAuditoriaHasta(e.target.value)} />
+                </label>
+              </div>
+
+              <div className="auditoria-meta">
+                <p className="muted">Registros: <strong>{auditoriaOrdenada.length}</strong></p>
+                <p className="muted">Página {auditoriaPagina} de {auditoriaTotalPaginas}</p>
+              </div>
+
+              {qAuditoria.isLoading ? <p className="muted">Cargando historial...</p> : null}
+              {!auditoriaTablaDisponible ? (
+                <p className="error-text">
+                  La tabla de auditoría no existe todavía en Supabase. Ejecuta el script supabase/auditoria.sql para habilitar este módulo.
+                </p>
+              ) : null}
+
+              <div className="tabla-wrap">
+                <table className="responsive-table auditoria-tabla">
+                  <thead>
+                    <tr>
+                      <th><button className="ghost auditoria-sort" onClick={() => alternarOrdenAuditoria('fecha')}>Fecha</button></th>
+                      <th><button className="ghost auditoria-sort" onClick={() => alternarOrdenAuditoria('hora')}>Hora</button></th>
+                      <th><button className="ghost auditoria-sort" onClick={() => alternarOrdenAuditoria('usuario')}>Usuario</button></th>
+                      <th><button className="ghost auditoria-sort" onClick={() => alternarOrdenAuditoria('modulo')}>Módulo</button></th>
+                      <th><button className="ghost auditoria-sort" onClick={() => alternarOrdenAuditoria('accion')}>Acción</button></th>
+                      <th><button className="ghost auditoria-sort" onClick={() => alternarOrdenAuditoria('descripcion')}>Descripción</button></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditoriaPaginada.map((item) => {
+                      const tipoInfo = infoTipoAuditoria(item.tipo)
+                      return (
+                        <tr key={item.id}>
+                          <td data-label="Fecha">{formatoFechaAuditoria(item.createdAt)}</td>
+                          <td data-label="Hora">{formatoHoraAuditoria(item.createdAt)}</td>
+                          <td data-label="Usuario">{item.usuarioNombre || item.usuarioEmail || 'Usuario desconocido'}</td>
+                          <td data-label="Módulo">{item.modulo}</td>
+                          <td data-label="Acción">
+                            <span className={`auditoria-tipo ${tipoInfo.className}`}>
+                              {iconoTipoAuditoria(item.tipo)} {tipoInfo.label}
+                            </span>
+                            <div className="auditoria-accion-codigo">{item.accion}</div>
+                          </td>
+                          <td data-label="Descripción">{item.descripcion}</td>
+                        </tr>
+                      )
+                    })}
+                    {auditoriaPaginada.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="muted">No hay eventos para los filtros seleccionados.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="auditoria-paginacion">
+                <button className="ghost" onClick={() => setAuditoriaPagina((prev) => Math.max(1, prev - 1))} disabled={auditoriaPagina <= 1}>
+                  Anterior
+                </button>
+                <span>{auditoriaPagina} / {auditoriaTotalPaginas}</span>
+                <button className="ghost" onClick={() => setAuditoriaPagina((prev) => Math.min(auditoriaTotalPaginas, prev + 1))} disabled={auditoriaPagina >= auditoriaTotalPaginas}>
+                  Siguiente
+                </button>
               </div>
             </section>
           </section>
