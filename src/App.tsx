@@ -117,10 +117,12 @@ type FormProductor = {
 type FilaReporteGeneralSemanal = {
   productorId: string
   productor: string
-  totalCestasEnviadas: number
+  totalCestasAmericanasEnviadas: number
+  totalCestasHinduEnviadas: number
   totalAmericanasEmpacadas: number
   totalHinduEmpacadas: number
-  totalEmpacadas: number
+  totalCestasEnviadas: number
+  totalCajasEmpacadas: number
   fechaInicio: string
   fechaFin: string
 }
@@ -184,7 +186,7 @@ function AnimatedNumber({ value, decimals = 0 }: { value: number; decimals?: num
   }, [value])
 
   return (
-    <>{displayValue.toLocaleString('es-HN', { maximumFractionDigits: decimals, minimumFractionDigits: decimals })}</>
+    <>{displayValue.toLocaleString('en-US', { maximumFractionDigits: decimals, minimumFractionDigits: decimals })}</>
   )
 }
 
@@ -350,35 +352,15 @@ const normalizarFilaReporteGeneralSemanal = (row: Record<string, unknown>): Fila
   return {
     productorId: String(row.productor_id ?? ''),
     productor: String(row.productor ?? '').trim() || 'Sin nombre',
-    totalCestasEnviadas: toNumber(row.total_cestas_enviadas as number | string | null),
+    totalCestasAmericanasEnviadas: toNumber(row.total_cestas_americanas_enviadas as number | string | null),
+    totalCestasHinduEnviadas: toNumber(row.total_cestas_hindu_enviadas as number | string | null),
     totalAmericanasEmpacadas: toNumber(row.total_americanas_empacadas as number | string | null),
     totalHinduEmpacadas: toNumber(row.total_hindu_empacadas as number | string | null),
-    totalEmpacadas: toNumber(row.total_empacadas as number | string | null),
+    totalCestasEnviadas: toNumber(row.total_cestas_enviadas as number | string | null),
+    totalCajasEmpacadas: toNumber(row.total_cajas_empacadas as number | string | null),
     fechaInicio: String(row.fecha_inicio ?? ''),
     fechaFin: String(row.fecha_fin ?? ''),
   }
-}
-
-const construirFilasGeneralesDesdeReportes = (
-  reportes: Reporte[],
-  productores: Productor[],
-): FilaReporteGeneralSemanal[] => {
-  return reportes
-    .map((rep) => {
-      const prod = productores.find((item) => item.id === rep.productor_id)
-      const total = computeWeeklyTotals(rep)
-      return {
-        productorId: rep.productor_id,
-        productor: prod?.nombre ?? 'Sin nombre',
-        totalCestasEnviadas: total.cestasA + total.cestasH,
-        totalAmericanasEmpacadas: total.totalAmericana,
-        totalHinduEmpacadas: total.totalHindu,
-        totalEmpacadas: total.totalAmericana + total.totalHindu,
-        fechaInicio: rep.fecha_inicio,
-        fechaFin: rep.fecha_fin,
-      }
-    })
-    .sort((a, b) => a.productor.localeCompare(b.productor, 'es'))
 }
 
 function PantallaLogin() {
@@ -1341,18 +1323,8 @@ function App() {
   }, [reporteEnEdicion, fechaDetalleSeleccionada, detalleEnEdicionId])
 
   const filasGeneralSemanal = useMemo<FilaReporteGeneralSemanal[]>(() => {
-    const productores = qProductores.data ?? []
-    const criterio = obtenerSemanaAnio(fechaGeneral)
-    const reportesSemana = (qReportesGlobal.data ?? []).filter(
-      (item) => item.semana === criterio.semana && item.anio === criterio.anio,
-    )
-
-    if ((qReporteGeneralSemanal.data ?? []).length > 0) {
-      return qReporteGeneralSemanal.data ?? []
-    }
-
-    return construirFilasGeneralesDesdeReportes(reportesSemana, productores)
-  }, [fechaGeneral, qProductores.data, qReporteGeneralSemanal.data, qReportesGlobal.data])
+    return qReporteGeneralSemanal.data ?? []
+  }, [qReporteGeneralSemanal.data])
 
   const reporteGeneralMeta = useMemo(() => {
     const criterio = obtenerSemanaAnio(fechaGeneral)
@@ -1368,10 +1340,15 @@ function App() {
       ? [...fechasFin].sort((a, b) => b.localeCompare(a))[0]
       : fallbackRange.weekEnd
 
-    const totalCestasEnviadas = filasGeneralSemanal.reduce((acc, fila) => acc + fila.totalCestasEnviadas, 0)
+    const totalCestasAmericanasEnviadas = filasGeneralSemanal.reduce(
+      (acc, fila) => acc + fila.totalCestasAmericanasEnviadas,
+      0,
+    )
+    const totalCestasHinduEnviadas = filasGeneralSemanal.reduce((acc, fila) => acc + fila.totalCestasHinduEnviadas, 0)
     const totalAmericanasEmpacadas = filasGeneralSemanal.reduce((acc, fila) => acc + fila.totalAmericanasEmpacadas, 0)
     const totalHinduEmpacadas = filasGeneralSemanal.reduce((acc, fila) => acc + fila.totalHinduEmpacadas, 0)
-    const totalEmpacadas = filasGeneralSemanal.reduce((acc, fila) => acc + fila.totalEmpacadas, 0)
+    const totalCestasEnviadas = filasGeneralSemanal.reduce((acc, fila) => acc + fila.totalCestasEnviadas, 0)
+    const totalCajasEmpacadas = filasGeneralSemanal.reduce((acc, fila) => acc + fila.totalCajasEmpacadas, 0)
     const fechaGeneracion = format(new Date(), "d 'de' MMMM 'de' yyyy", { locale: es })
     const periodoDesde = format(parseISO(fechaInicio), "d 'de' MMMM", { locale: es })
     const periodoHasta = format(parseISO(fechaFin), "d 'de' MMMM 'de' yyyy", { locale: es })
@@ -1381,15 +1358,17 @@ function App() {
       anio: criterio.anio,
       fechaInicio,
       fechaFin,
-      totalCestasEnviadas,
+      totalCestasAmericanasEnviadas,
+      totalCestasHinduEnviadas,
       totalAmericanasEmpacadas,
       totalHinduEmpacadas,
-      totalEmpacadas,
+      totalCestasEnviadas,
+      totalCajasEmpacadas,
       totalProductores: filasGeneralSemanal.length,
       periodoTexto: `PERIODO DEL ${periodoDesde.toUpperCase()} AL ${periodoHasta.toUpperCase()}`,
       fechaGeneracion: fechaGeneracion.charAt(0).toUpperCase() + fechaGeneracion.slice(1),
     }
-  }, [fechaGeneral, filasGeneralSemanal, qReportesGlobal.data])
+  }, [fechaGeneral, filasGeneralSemanal])
 
   const vistaCargando = qProductores.isLoading && !qProductores.data
   const metaVista = META_VISTA[vista]
@@ -1937,17 +1916,21 @@ function App() {
     const rows = [
       [
         'Productor',
-        'Total de Cestas Enviadas',
+        'Total de Cestas Americanas Enviadas',
+        'Total de Cestas Hindú Enviadas',
         'Total de Americanas Empacadas',
         'Total de Hindú Empacadas',
-        'Total Empacadas',
+        'Total de Cestas Enviadas',
+        'Total de Cajas Empacadas',
       ],
       ...filas.map((fila) => [
         fila.productor,
-        String(fila.totalCestasEnviadas),
+        String(fila.totalCestasAmericanasEnviadas),
+        String(fila.totalCestasHinduEnviadas),
         String(fila.totalAmericanasEmpacadas),
         String(fila.totalHinduEmpacadas),
-        String(fila.totalEmpacadas),
+        String(fila.totalCestasEnviadas),
+        String(fila.totalCajasEmpacadas),
       ]),
     ]
 
@@ -1970,10 +1953,12 @@ function App() {
 
     const rows = filas.map((fila) => ({
       Productor: fila.productor,
-      TotalCestasEnviadas: fila.totalCestasEnviadas,
+      TotalCestasAmericanasEnviadas: fila.totalCestasAmericanasEnviadas,
+      TotalCestasHinduEnviadas: fila.totalCestasHinduEnviadas,
       TotalAmericanasEmpacadas: fila.totalAmericanasEmpacadas,
       TotalHinduEmpacadas: fila.totalHinduEmpacadas,
-      TotalEmpacadas: fila.totalEmpacadas,
+      TotalCestasEnviadas: fila.totalCestasEnviadas,
+      TotalCajasEmpacadas: fila.totalCajasEmpacadas,
     }))
 
     exportRowsToExcel(rows, `${nombre}.xlsx`, 'Reporte General Semanal')
@@ -2556,7 +2541,7 @@ function App() {
                         <tr key={fila.id}>
                             <td data-label="Fecha">{fila.fecha}</td>
                             <td data-label="Productor">{fila.productor}</td>
-                            <td data-label="Total cajas">{fila.totalCajas}</td>
+                            <td data-label="Total cajas">{fila.totalCajas.toLocaleString('en-US')}</td>
                             <td data-label="Rendimiento">{fila.rendimiento}</td>
                             <td data-label="Estado">
                             <span className={`estado-pill ${fila.estado.className}`}>{fila.estado.label}</span>
@@ -2916,7 +2901,7 @@ function App() {
                           <td data-label="Semana">{`SEM ${rep.semana}`}</td>
                           <td data-label="Inicio">{rep.fecha_inicio}</td>
                           <td data-label="Fin">{rep.fecha_fin}</td>
-                          <td data-label="Total cajas">{total.totalBoxes}</td>
+                          <td data-label="Total cajas">{total.totalBoxes.toLocaleString('en-US')}</td>
                           <td data-label="Promedio">{promedio.toFixed(2)}</td>
                           <td data-label="Estado"><span className={`estado-pill ${estado.className}`}>{estado.label}</span></td>
                           <td data-label="Acciones" className="acciones-celda">
@@ -3109,30 +3094,36 @@ function App() {
                   <thead>
                     <tr>
                       <th>Productor</th>
-                      <th>Total de Cestas Enviadas</th>
+                      <th>Total de Cestas Americanas Enviadas</th>
+                      <th>Total de Cestas Hindú Enviadas</th>
                       <th>Total de Americanas Empacadas</th>
                       <th>Total de Hindú Empacadas</th>
-                      <th>Total Empacadas</th>
+                      <th>Total de Cestas Enviadas</th>
+                      <th>Total de Cajas Empacadas</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filasGeneralSemanal.map((fila) => (
                       <tr key={fila.productorId}>
                         <td data-label="Productor">{fila.productor}</td>
-                        <td data-label="Total de Cestas Enviadas">{fila.totalCestasEnviadas}</td>
-                        <td data-label="Total de Americanas Empacadas">{fila.totalAmericanasEmpacadas}</td>
-                        <td data-label="Total de Hindú Empacadas">{fila.totalHinduEmpacadas}</td>
-                        <td data-label="Total Empacadas">{fila.totalEmpacadas}</td>
+                        <td data-label="Total de Cestas Americanas Enviadas">{fila.totalCestasAmericanasEnviadas.toLocaleString('en-US')}</td>
+                        <td data-label="Total de Cestas Hindú Enviadas">{fila.totalCestasHinduEnviadas.toLocaleString('en-US')}</td>
+                        <td data-label="Total de Americanas Empacadas">{fila.totalAmericanasEmpacadas.toLocaleString('en-US')}</td>
+                        <td data-label="Total de Hindú Empacadas">{fila.totalHinduEmpacadas.toLocaleString('en-US')}</td>
+                        <td data-label="Total de Cestas Enviadas">{fila.totalCestasEnviadas.toLocaleString('en-US')}</td>
+                        <td data-label="Total de Cajas Empacadas">{fila.totalCajasEmpacadas.toLocaleString('en-US')}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr>
                       <th>TOTAL</th>
-                      <th>{reporteGeneralMeta.totalCestasEnviadas}</th>
-                      <th>{reporteGeneralMeta.totalAmericanasEmpacadas}</th>
-                      <th>{reporteGeneralMeta.totalHinduEmpacadas}</th>
-                      <th>{reporteGeneralMeta.totalEmpacadas}</th>
+                      <th>{reporteGeneralMeta.totalCestasAmericanasEnviadas.toLocaleString('en-US')}</th>
+                      <th>{reporteGeneralMeta.totalCestasHinduEnviadas.toLocaleString('en-US')}</th>
+                      <th>{reporteGeneralMeta.totalAmericanasEmpacadas.toLocaleString('en-US')}</th>
+                      <th>{reporteGeneralMeta.totalHinduEmpacadas.toLocaleString('en-US')}</th>
+                      <th>{reporteGeneralMeta.totalCestasEnviadas.toLocaleString('en-US')}</th>
+                      <th>{reporteGeneralMeta.totalCajasEmpacadas.toLocaleString('en-US')}</th>
                     </tr>
                   </tfoot>
                 </table>

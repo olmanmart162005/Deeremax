@@ -120,14 +120,14 @@ export function ReporteEmpaque({
             return (
               <tr key={detalle.id}>
                 <td>{format(parseISO(detalle.fecha), 'dd-MMM-yy', { locale: es })}</td>
-                <td>{detalle.cestas_a}</td>
-                <td>{detalle.cestas_h}</td>
-                <td>{detalle.americana_4}</td>
-                <td>{detalle.americana_5}</td>
-                <td>{detalle.americana_7}</td>
-                <td>{detalle.hindu_4}</td>
-                <td>{detalle.hindu_5}</td>
-                <td>{detalle.hindu_7}</td>
+                <td>{detalle.cestas_a.toLocaleString('en-US')}</td>
+                <td>{detalle.cestas_h.toLocaleString('en-US')}</td>
+                <td>{detalle.americana_4.toLocaleString('en-US')}</td>
+                <td>{detalle.americana_5.toLocaleString('en-US')}</td>
+                <td>{detalle.americana_7.toLocaleString('en-US')}</td>
+                <td>{detalle.hindu_4.toLocaleString('en-US')}</td>
+                <td>{detalle.hindu_5.toLocaleString('en-US')}</td>
+                <td>{detalle.hindu_7.toLocaleString('en-US')}</td>
                 <td>{calc.rendimientoA.toFixed(2).replace('.', ',')}</td>
                 <td>{calc.rendimientoH.toFixed(2).replace('.', ',')}</td>
               </tr>
@@ -137,14 +137,14 @@ export function ReporteEmpaque({
         <tfoot>
           <tr>
             <th>TOTAL</th>
-            <th>{total.cestasA}</th>
-            <th>{total.cestasH}</th>
-            <th>{totalPorCalibre.a4}</th>
-            <th>{totalPorCalibre.a5}</th>
-            <th>{totalPorCalibre.a7}</th>
-            <th>{totalPorCalibre.h4}</th>
-            <th>{totalPorCalibre.h5}</th>
-            <th>{totalPorCalibre.h7}</th>
+            <th>{total.cestasA.toLocaleString('en-US')}</th>
+            <th>{total.cestasH.toLocaleString('en-US')}</th>
+            <th>{totalPorCalibre.a4.toLocaleString('en-US')}</th>
+            <th>{totalPorCalibre.a5.toLocaleString('en-US')}</th>
+            <th>{totalPorCalibre.a7.toLocaleString('en-US')}</th>
+            <th>{totalPorCalibre.h4.toLocaleString('en-US')}</th>
+            <th>{totalPorCalibre.h5.toLocaleString('en-US')}</th>
+            <th>{totalPorCalibre.h7.toLocaleString('en-US')}</th>
             <th>{rend.rendimientoA.toFixed(2).replace('.', ',')}</th>
             <th>{rend.rendimientoH.toFixed(2).replace('.', ',')}</th>
           </tr>
@@ -154,7 +154,7 @@ export function ReporteEmpaque({
 
       <div className="total-empacado-excel">
         <span>TOTAL DE CAJAS EMPACADAS</span>
-        <strong>{total.totalBoxes}</strong>
+        <strong>{total.totalBoxes.toLocaleString('en-US')}</strong>
       </div>
 
       {observaciones.length > 0 ? (

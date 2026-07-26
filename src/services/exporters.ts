@@ -33,13 +33,13 @@ const crearClonExportacion = (element: HTMLElement) => {
   host.style.padding = `${EXPORT_PADDING}px`
   host.style.overflow = 'visible'
   host.style.width = 'max-content'
-  host.style.minWidth = `${EXPORT_DESKTOP_WIDTH}px`
+  host.style.minWidth = 'fit-content'
   host.style.pointerEvents = 'none'
 
   const clone = element.cloneNode(true) as HTMLElement
-  clone.style.width = `${EXPORT_DESKTOP_WIDTH}px`
-  clone.style.minWidth = `${EXPORT_DESKTOP_WIDTH}px`
-  clone.style.maxWidth = `${EXPORT_DESKTOP_WIDTH}px`
+  clone.style.width = 'max-content'
+  clone.style.minWidth = 'fit-content'
+  clone.style.maxWidth = 'none'
   clone.style.overflow = 'visible'
   clone.style.transform = 'none'
 

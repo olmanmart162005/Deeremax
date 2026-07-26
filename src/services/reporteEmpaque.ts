@@ -69,7 +69,7 @@ const prepararClonParaCaptura = (element: HTMLElement) => {
   host.style.padding = `${EXPORT_PADDING}px`
   host.style.overflow = 'visible'
   host.style.width = 'max-content'
-  host.style.minWidth = `${EXPORT_DESKTOP_WIDTH}px`
+  host.style.minWidth = 'fit-content'
   host.style.zIndex = '-1'
   host.style.pointerEvents = 'none'
 
@@ -77,9 +77,9 @@ const prepararClonParaCaptura = (element: HTMLElement) => {
   clone.removeAttribute('id')
   clone.dataset.exportMode = 'desktop'
   clone.style.overflow = 'visible'
-  clone.style.width = `${EXPORT_DESKTOP_WIDTH}px`
-  clone.style.minWidth = `${EXPORT_DESKTOP_WIDTH}px`
-  clone.style.maxWidth = `${EXPORT_DESKTOP_WIDTH}px`
+  clone.style.width = 'max-content'
+  clone.style.minWidth = 'fit-content'
+  clone.style.maxWidth = 'none'
   clone.style.transform = 'none'
 
   const nodos = [clone, ...Array.from(clone.querySelectorAll<HTMLElement>('*'))]
@@ -104,7 +104,7 @@ const prepararClonParaCaptura = (element: HTMLElement) => {
 
     if (node.classList.contains('tabla-excel-wrap')) {
       node.style.overflow = 'visible'
-      node.style.width = `${EXPORT_DESKTOP_WIDTH - EXPORT_PADDING * 2}px`
+      node.style.width = 'max-content'
       node.style.maxWidth = 'none'
       node.style.minWidth = '0'
       node.scrollLeft = 0
@@ -125,9 +125,9 @@ const prepararClonParaCaptura = (element: HTMLElement) => {
     }
 
     if (node.classList.contains('hoja-reporte') || node.classList.contains('reporte-empaque')) {
-      node.style.width = `${EXPORT_DESKTOP_WIDTH}px`
-      node.style.minWidth = `${EXPORT_DESKTOP_WIDTH}px`
-      node.style.maxWidth = `${EXPORT_DESKTOP_WIDTH}px`
+      node.style.width = 'max-content'
+      node.style.minWidth = 'fit-content'
+      node.style.maxWidth = 'none'
       node.style.overflow = 'visible'
     }
   })
@@ -367,6 +367,9 @@ export const exportarReporteEmpaqueExcel = async (
         right: { style: 'thin', color: { argb: 'FF000000' } },
       }
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F1F1' } }
+      if (typeof cell.value === 'number') {
+        cell.numFmt = cell.value % 1 === 0 ? '#,##0' : '#,##0.00'
+      }
     })
   })
 
@@ -409,6 +412,9 @@ export const exportarReporteEmpaqueExcel = async (
       right: { style: 'thin', color: { argb: 'FF000000' } },
     }
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0C215' } }
+    if (typeof cell.value === 'number') {
+      cell.numFmt = cell.value % 1 === 0 ? '#,##0' : '#,##0.00'
+    }
   })
 
   const cajasRow = worksheet.getRow(totalsRowIndex + 2)
@@ -433,6 +439,7 @@ export const exportarReporteEmpaqueExcel = async (
     bottom: { style: 'thin', color: { argb: 'FF000000' } },
     right: { style: 'thin', color: { argb: 'FF000000' } },
   }
+  cajasRow.getCell(7).numFmt = '#,##0'
 
   await workbook.xlsx.writeBuffer().then((buffer) => {
     const blob = new Blob([buffer], {
