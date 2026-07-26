@@ -2,7 +2,6 @@ import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import * as XLSX from 'xlsx'
 
-const EXPORT_DESKTOP_WIDTH = 1400
 const EXPORT_PADDING = 28
 const EXPORT_PIXEL_RATIO = 4
 const CAPTURE_BUFFER = 8
