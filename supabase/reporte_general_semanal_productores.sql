@@ -7,10 +7,12 @@ create or replace function public.reporte_general_semanal_productores(
 returns table (
   productor_id uuid,
   productor text,
-  total_cestas_enviadas bigint,
+  total_cestas_americanas_enviadas bigint,
+  total_cestas_hindu_enviadas bigint,
   total_americanas_empacadas bigint,
   total_hindu_empacadas bigint,
-  total_empacadas bigint,
+  total_cestas_enviadas bigint,
+  total_cajas_empacadas bigint,
   fecha_inicio date,
   fecha_fin date
 )
@@ -20,10 +22,12 @@ as $$
   select
     r.productor_id,
     coalesce(p.nombre, 'SIN NOMBRE') as productor,
-    coalesce(sum(d.cestas_a + d.cestas_h), 0)::bigint as total_cestas_enviadas,
+    coalesce(sum(d.cestas_a), 0)::bigint as total_cestas_americanas_enviadas,
+    coalesce(sum(d.cestas_h), 0)::bigint as total_cestas_hindu_enviadas,
     coalesce(sum(d.americana_4 + d.americana_5 + d.americana_7), 0)::bigint as total_americanas_empacadas,
     coalesce(sum(d.hindu_4 + d.hindu_5 + d.hindu_7), 0)::bigint as total_hindu_empacadas,
-    coalesce(sum(d.americana_4 + d.americana_5 + d.americana_7 + d.hindu_4 + d.hindu_5 + d.hindu_7), 0)::bigint as total_empacadas,
+    coalesce(sum(d.cestas_a + d.cestas_h), 0)::bigint as total_cestas_enviadas,
+    coalesce(sum(d.americana_4 + d.americana_5 + d.americana_7 + d.hindu_4 + d.hindu_5 + d.hindu_7), 0)::bigint as total_cajas_empacadas,
     min(r.fecha_inicio) as fecha_inicio,
     max(r.fecha_fin) as fecha_fin
   from public.reportes r

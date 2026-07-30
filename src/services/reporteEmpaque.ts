@@ -1,10 +1,10 @@
 import ExcelJS from 'exceljs'
-import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 import type { Productor, Reporte } from '../types'
 import { computeDailyTotals, computeWeeklyTotals, weeklyRendimiento } from '../utils/report'
 import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { capturarElementoPngCanvas, exportElementToPng } from './exportPng'
 
 const blobToBase64 = async (blob: Blob) => {
   const arrayBuffer = await blob.arrayBuffer()
@@ -22,215 +22,23 @@ const cargarLogoBase64 = async () => {
   return blobToBase64(blob)
 }
 
-const filterNoButtons = (node: Node) => {
-  if (node instanceof HTMLElement) {
-    if (
-      node.classList.contains('print-hidden') ||
-      node.classList.contains('acciones-linea') ||
-      node.tagName === 'BUTTON'
-    ) {
-      return false
-    }
-  }
-  return true
-}
-
-const esperarSiguienteFrame = () => new Promise<void>((resolve) => {
-  requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-})
-
-const esperarImagenes = async (element: HTMLElement) => {
-  const imagenes = Array.from(element.querySelectorAll('img'))
-  await Promise.all(
-    imagenes.map((img) => {
-      if (img.complete) return Promise.resolve()
-      return new Promise<void>((resolve) => {
-        img.addEventListener('load', () => resolve(), { once: true })
-        img.addEventListener('error', () => resolve(), { once: true })
-      })
-    }),
-  )
-}
-
-const EXPORT_DESKTOP_WIDTH = 1400
-const EXPORT_PADDING = 28
-const EXPORT_SCALE = 4
-const PNG_TARGET_WIDTH = 3508
-const PNG_TARGET_HEIGHT = 2480
-const CAPTURE_BUFFER = 8
-const EXPORT_BOTTOM_MARGIN = 24
-
-const prepararClonParaCaptura = (element: HTMLElement) => {
-  const host = document.createElement('div')
-  host.style.position = 'absolute'
-  host.style.left = '-99999px'
-  host.style.top = '0'
-  host.style.background = '#ffffff'
-  host.style.padding = `${EXPORT_PADDING}px`
-  host.style.overflow = 'visible'
-  host.style.width = 'max-content'
-  host.style.minWidth = 'fit-content'
-  host.style.zIndex = '-1'
-  host.style.pointerEvents = 'none'
-
-  const clone = element.cloneNode(true) as HTMLElement
-  clone.removeAttribute('id')
-  clone.dataset.exportMode = 'desktop'
-  clone.style.overflow = 'visible'
-  clone.style.width = 'max-content'
-  clone.style.minWidth = 'fit-content'
-  clone.style.maxWidth = 'none'
-  clone.style.transform = 'none'
-
-  const nodos = [clone, ...Array.from(clone.querySelectorAll<HTMLElement>('*'))]
-
-  nodos.forEach((node) => {
-    const computed = window.getComputedStyle(node)
-
-    if (computed.overflow === 'hidden' || computed.overflowX === 'hidden' || computed.overflowY === 'hidden') {
-      node.style.overflow = 'visible'
-    }
-
-    if (computed.maxWidth !== 'none') {
-      node.style.maxWidth = 'none'
-    }
-
-    if (computed.transform && computed.transform !== 'none') {
-      node.style.transform = 'none'
-    }
-
-    node.style.transition = 'none'
-    node.style.animation = 'none'
-
-    if (node.classList.contains('tabla-excel-wrap')) {
-      node.style.overflow = 'visible'
-      node.style.width = 'max-content'
-      node.style.maxWidth = 'none'
-      node.style.minWidth = '0'
-      node.scrollLeft = 0
-    }
-
-    if (node.classList.contains('tabla-excel')) {
-      node.style.width = 'max-content'
-      node.style.maxWidth = 'none'
-      node.style.minWidth = '100%'
-    }
-
-    if (node.classList.contains('cabecera-hoja')) {
-      node.style.display = 'flex'
-      node.style.flexDirection = 'row'
-      node.style.alignItems = 'center'
-      node.style.textAlign = 'left'
-      node.style.gap = '16px'
-    }
-
-    if (node.classList.contains('hoja-reporte') || node.classList.contains('reporte-empaque')) {
-      node.style.width = 'max-content'
-      node.style.minWidth = 'fit-content'
-      node.style.maxWidth = 'none'
-      node.style.overflow = 'visible'
-    }
-  })
-
-  host.appendChild(clone)
-
-  // Keep an explicit blank space after the report to avoid clipping the bottom border.
-  const bottomSpacer = document.createElement('div')
-  bottomSpacer.style.height = `${EXPORT_BOTTOM_MARGIN}px`
-  bottomSpacer.style.width = '100%'
-  bottomSpacer.style.pointerEvents = 'none'
-  host.appendChild(bottomSpacer)
-
-  document.body.appendChild(host)
-
-  const limpiar = () => {
-    host.remove()
-  }
-
-  return { host, limpiar }
-}
-
-const capturarCanvasCompleto = async (element: HTMLElement, scale = 4) => {
-  if ('fonts' in document) {
-    await (document as Document & { fonts: FontFaceSet }).fonts.ready
-  }
-
-  const { host, limpiar } = prepararClonParaCaptura(element)
-
-  await esperarImagenes(host)
-  await esperarSiguienteFrame()
-  await esperarSiguienteFrame()
-
-  const width = Math.ceil(Math.max(host.scrollWidth, host.getBoundingClientRect().width) + CAPTURE_BUFFER)
-  const height = Math.ceil(Math.max(host.scrollHeight, host.getBoundingClientRect().height) + CAPTURE_BUFFER)
-
-  try {
-    return await html2canvas(host, {
-      backgroundColor: '#ffffff',
-      scale,
-      useCORS: true,
-      allowTaint: true,
-      logging: false,
-      width,
-      height,
-      windowWidth: Math.max(width, EXPORT_DESKTOP_WIDTH),
-      windowHeight: Math.max(height, 1200),
-      scrollX: 0,
-      scrollY: 0,
-      ignoreElements: (node) => !filterNoButtons(node),
-    })
-  } finally {
-    limpiar()
-  }
-}
-
-const prepararCanvasAltaResolucion = (sourceCanvas: HTMLCanvasElement) => {
-  const upscaleFactor = Math.max(
-    1,
-    PNG_TARGET_WIDTH / sourceCanvas.width,
-    PNG_TARGET_HEIGHT / sourceCanvas.height,
-  )
-
-  const scaledWidth = Math.ceil(sourceCanvas.width * upscaleFactor)
-  const scaledHeight = Math.ceil(sourceCanvas.height * upscaleFactor)
-
-  const canvas = document.createElement('canvas')
-  canvas.width = scaledWidth
-  canvas.height = scaledHeight
-
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return sourceCanvas
-
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(sourceCanvas, 0, 0, scaledWidth, scaledHeight)
-
-  return canvas
-}
-
 export const exportarReporteEmpaquePNG = async (element: HTMLElement, fileName: string) => {
-  const captured = await capturarCanvasCompleto(element, EXPORT_SCALE)
-  const canvas = prepararCanvasAltaResolucion(captured)
-  const dataUrl = canvas.toDataURL('image/png', 1)
-  const link = document.createElement('a')
-  link.href = dataUrl
-  link.download = fileName
-  link.click()
+  await exportElementToPng(element, fileName, { format: 'a4-landscape' })
 }
 
 export const exportarReporteEmpaqueJPG = async (element: HTMLElement, fileName: string) => {
-  const captured = await capturarCanvasCompleto(element, EXPORT_SCALE)
-  const canvas = prepararCanvasAltaResolucion(captured)
+  const canvas = await capturarElementoPngCanvas(element, { scale: 3, format: 'a4-landscape' })
   const dataUrl = canvas.toDataURL('image/jpeg', 0.98)
   const link = document.createElement('a')
   link.href = dataUrl
-  link.download = fileName
+  link.download = fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') ? fileName : `${fileName}.jpg`
+  document.body.appendChild(link)
   link.click()
+  document.body.removeChild(link)
 }
 
 export const exportarReporteEmpaquePDF = async (element: HTMLElement, fileName: string) => {
-  const sourceCaptured = await capturarCanvasCompleto(element, EXPORT_SCALE)
-  const sourceCanvas = prepararCanvasAltaResolucion(sourceCaptured)
+  const sourceCanvas = await capturarElementoPngCanvas(element, { scale: 3, format: 'a4-landscape' })
   const image = sourceCanvas.toDataURL('image/png', 1)
 
   const pdf = new jsPDF('l', 'mm', 'a4')
