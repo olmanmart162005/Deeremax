@@ -204,10 +204,18 @@ export const ModalPerfilUsuario: React.FC<ModalPerfilUsuarioProps> = ({
             </label>
           </div>
 
-          <div className="mt-2 p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200/80 flex items-center gap-2">
-            <Shield size={16} className="text-emerald-700 flex-shrink-0" />
-            <div className="text-xs text-emerald-900">
-              Rol del sistema: <strong>{perfilActual.rol || 'Operador'}</strong>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-2">
+            <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200/80 flex items-center gap-2">
+              <Shield size={16} className="text-emerald-700 flex-shrink-0" />
+              <div className="text-xs text-emerald-950">
+                Rol del sistema: <strong className="text-emerald-800">{perfilActual.rol || 'Operador'}</strong>
+              </div>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-emerald-200" />
+              <div className="text-xs text-slate-800">
+                Estado de cuenta: <strong className="text-emerald-700 font-bold">Activa</strong>
+              </div>
             </div>
           </div>
 

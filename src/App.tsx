@@ -2383,7 +2383,7 @@ function App() {
           </button>
         </div>
         <div
-          className="menu-usuario-resumen"
+          className="menu-usuario-resumen group"
           onClick={() => {
             setModalPerfilAbierto(true)
             setMenuAbierto(false)
@@ -2399,17 +2399,25 @@ function App() {
             }
           }}
         >
-          <Avatar
-            src={usuarioFoto}
-            name={usuarioNombre}
-            size="md"
-            type="user"
-            border={true}
-          />
-          <div className="menu-usuario-datos">
-            <span>{usuarioNombre}</span>
-            <small>{usuarioEmail}</small>
-            <small>{rolUsuario}</small>
+          <div className="relative flex-shrink-0">
+            <Avatar
+              src={usuarioFoto}
+              name={usuarioNombre}
+              size="lg"
+              type="user"
+              border={true}
+            />
+            <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-600 border border-white flex items-center justify-center text-white shadow-xs">
+              <Pencil size={8} />
+            </span>
+          </div>
+          <div className="menu-usuario-datos flex-1 min-w-0">
+            <span className="truncate">{usuarioNombre}</span>
+            <small className="truncate">{usuarioEmail}</small>
+            <small className="text-emerald-200/90 font-semibold">{rolUsuario}</small>
+          </div>
+          <div className="text-white/40 group-hover:text-white/90 group-hover:translate-x-0.5 transition-all text-xs font-bold pl-1">
+            →
           </div>
         </div>
         <nav>

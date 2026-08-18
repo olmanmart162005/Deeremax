@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { UserRound, Building2, Image as ImageIcon } from 'lucide-react'
 
-export type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl'
+export type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl'
 export type AvatarVariant = 'circle' | 'rounded' | 'square'
 export type AvatarType = 'user' | 'producer' | 'general'
 
@@ -56,6 +56,7 @@ const SIZES_PX: Record<AvatarSize, { px: number; font: number; icon: number }> =
   lg: { px: 48, font: 16, icon: 22 },
   xl: { px: 64, font: 20, icon: 28 },
   '2xl': { px: 96, font: 28, icon: 42 },
+  '3xl': { px: 116, font: 34, icon: 50 },
 }
 
 export const Avatar: React.FC<AvatarProps> = ({
@@ -81,14 +82,14 @@ export const Avatar: React.FC<AvatarProps> = ({
   }, [src])
 
   const dimension = typeof size === 'number' ? size : SIZES_PX[size]?.px || 40
-  const fontSize = typeof size === 'number' ? Math.round(size * 0.38) : SIZES_PX[size]?.font || 14
+  const fontSize = typeof size === 'number' ? Math.round(size * 0.36) : SIZES_PX[size]?.font || 14
   const iconSize = typeof size === 'number' ? Math.round(size * 0.45) : SIZES_PX[size]?.icon || 18
 
   const iniciales = obtenerIniciales(name)
   const backgroundGradient = hashStringParaColor(name || 'DeereMax')
 
   const radioClase =
-    variant === 'circle' ? 'rounded-full' : variant === 'rounded' ? 'rounded-xl' : 'rounded-md'
+    variant === 'circle' ? 'rounded-full' : variant === 'rounded' ? 'rounded-2xl' : 'rounded-lg'
 
   const tieneFotoValida = Boolean(src && !fallo)
 
@@ -109,10 +110,10 @@ export const Avatar: React.FC<AvatarProps> = ({
     >
       <div
         className={`dm-avatar-inner w-full h-full ${radioClase} overflow-hidden flex items-center justify-center ${
-          border ? 'border border-emerald-900/15 shadow-sm' : ''
+          border ? 'ring-2 ring-white/90 shadow-md border border-slate-200/80' : ''
         }`}
         style={{
-          background: tieneFotoValida ? '#f1f5f9' : backgroundGradient,
+          background: tieneFotoValida ? '#f8fafc' : backgroundGradient,
         }}
       >
         {tieneFotoValida ? (
@@ -140,17 +141,17 @@ export const Avatar: React.FC<AvatarProps> = ({
             />
           </>
         ) : (
-          <div className="flex items-center justify-center text-white font-bold tracking-wider">
+          <div className="flex items-center justify-center text-white font-black tracking-wider drop-shadow-sm">
             {name ? (
-              <span style={{ fontSize: `${fontSize}px`, textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}>
+              <span style={{ fontSize: `${fontSize}px`, textShadow: '0 1px 3px rgba(0,0,0,0.35)' }}>
                 {iniciales}
               </span>
             ) : type === 'producer' ? (
-              <Building2 size={iconSize} className="text-white/90" />
+              <Building2 size={iconSize} className="text-white/95" />
             ) : type === 'user' ? (
-              <UserRound size={iconSize} className="text-white/90" />
+              <UserRound size={iconSize} className="text-white/95" />
             ) : (
-              <ImageIcon size={iconSize} className="text-white/90" />
+              <ImageIcon size={iconSize} className="text-white/95" />
             )}
           </div>
         )}
@@ -162,8 +163,8 @@ export const Avatar: React.FC<AvatarProps> = ({
             status === 'active' ? 'bg-emerald-500' : 'bg-slate-400'
           }`}
           style={{
-            width: `${Math.max(8, Math.round(dimension * 0.24))}px`,
-            height: `${Math.max(8, Math.round(dimension * 0.24))}px`,
+            width: `${Math.max(8, Math.round(dimension * 0.22))}px`,
+            height: `${Math.max(8, Math.round(dimension * 0.22))}px`,
           }}
           aria-label={status === 'active' ? 'Activo' : 'Inactivo'}
         />

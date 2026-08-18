@@ -2756,17 +2756,40 @@ tbody tr:nth-child(even):hover {
 }
 
 .modal-perfil-usuario {
-  max-width: 580px;
+  max-width: 590px;
   width: 95%;
   max-height: 90vh;
   overflow-y: auto;
 }
 
-.dm-photo-card {
-  border: 1px solid var(--gray-200);
-  border-radius: var(--radius-md);
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+.dm-photo-hero-card {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.dm-photo-hero-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 18px -4px rgba(15, 23, 42, 0.08);
+}
+
+.dm-upload-option-card {
+  transition: all 0.2s ease;
+}
+
+.dm-upload-option-card:hover {
+  border-color: #94a3b8;
+}
+
+.dm-dropzone-box {
+  cursor: pointer;
+}
+
+.btn-upload-file {
+  background: var(--primary) !important;
+  color: #ffffff !important;
+}
+
+.btn-upload-file:hover {
+  background: var(--primary-dark) !important;
 }
 
 .dm-avatar-container {
@@ -2788,7 +2811,7 @@ tbody tr:nth-child(even):hover {
 .encabezado-captura-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .celda-productor-tabla {
@@ -2800,4 +2823,13 @@ tbody tr:nth-child(even):hover {
 .celda-productor-tabla strong {
   color: var(--gray-900);
   font-weight: 600;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
