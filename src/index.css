@@ -1784,22 +1784,31 @@ tbody tr:nth-child(even):hover {
 .overlay-modal {
   position: fixed;
   inset: 0;
-  z-index: 80;
-  padding: 20px;
-  background: rgba(0, 0, 0, 0.5);
-  display: grid;
-  place-items: center;
+  z-index: 999;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 .modal {
-  width: min(700px, 95vw);
-  max-height: calc(100vh - 40px);
-  overflow: auto;
+  width: min(700px, calc(100vw - 24px));
+  max-width: 100%;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overflow-x: hidden;
   border-radius: var(--radius-xl);
   background: #fff;
   border: 1px solid var(--gray-200);
   box-shadow: var(--shadow-xl);
   padding: 24px;
+  box-sizing: border-box;
+  margin: auto;
 }
 
 .modal-head {
@@ -1810,6 +1819,8 @@ tbody tr:nth-child(even):hover {
   margin-bottom: 20px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--gray-100);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .modal-head h3 {
@@ -1817,12 +1828,24 @@ tbody tr:nth-child(even):hover {
   font-size: 1.05rem;
   font-weight: 700;
   color: var(--gray-900);
+  word-break: break-word;
 }
 
 .modal-form {
   display: grid;
   grid-template-columns: 1fr;
   gap: 16px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.modal-form .dm-image-upload-field {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 /* ─── Toast ───────────────────────────────────────── */
@@ -2053,6 +2076,10 @@ tbody tr:nth-child(even):hover {
   border: 1px solid var(--gray-200);
   background: #fff;
   padding: 2px 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .field-shell:focus-within {
@@ -2071,6 +2098,9 @@ tbody tr:nth-child(even):hover {
   box-shadow: none;
   padding-left: 0;
   height: 40px;
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .field-shell input:focus {
@@ -2513,16 +2543,55 @@ tbody tr:nth-child(even):hover {
   }
 
   .overlay-modal {
-    padding: 12px;
+    padding: 10px;
+    align-items: flex-start;
   }
 
-  .modal {
-    width: 95vw;
-    max-height: calc(100vh - 24px);
+  .modal,
+  .modal-perfil-usuario {
+    width: 100% !important;
+    max-width: calc(100vw - 20px) !important;
+    max-height: calc(100dvh - 20px) !important;
+    padding: 16px 12px !important;
+    border-radius: 16px !important;
+    margin: 8px auto !important;
+    box-sizing: border-box !important;
   }
 
   .modal-head {
     flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+  }
+
+  .modal-form {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    width: 100% !important;
+  }
+
+  .modal-form label,
+  .modal-form .field-shell,
+  .modal-form input,
+  .modal-form textarea,
+  .modal-form select {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .modal-form .acciones-linea {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  .modal-form .acciones-linea > button {
+    width: 100% !important;
+    justify-content: center !important;
   }
 
   .login-page {
