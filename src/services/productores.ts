@@ -9,6 +9,7 @@ export type PayloadProductor = {
   sector: string
   observaciones: string
   activo: boolean
+  foto_url?: string | null
 }
 
 const normalizarNombreProductor = (value: string) => value.trim().replace(/\s+/g, ' ').toUpperCase()
@@ -21,7 +22,7 @@ export const estaActivo = (productor: Productor) => {
 export const guardarProductor = async (productorId: string | null, payload: PayloadProductor) => {
   const nombre = normalizarNombreProductor(payload.nombre)
 
-  const basePayload = {
+  const basePayload: Record<string, unknown> = {
     codigo: payload.codigo,
     nombre,
     telefono: payload.telefono,
@@ -29,6 +30,7 @@ export const guardarProductor = async (productorId: string | null, payload: Payl
     sector: payload.sector,
     observaciones: payload.observaciones,
     activo: payload.activo,
+    foto_url: payload.foto_url ?? null,
   }
 
   const query = productorId

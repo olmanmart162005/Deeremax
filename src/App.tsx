@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, format, getWeek, getWeekYear, parseISO, startOfMonth, startOfYear } from 'date-fns'
 import { es } from 'date-fns/locale'
 import {
@@ -34,8 +34,6 @@ import {
   Trash2,
   TrendingDown,
   TrendingUp,
-  UserCircle2,
-  UserRound,
   Users,
   X,
 } from 'lucide-react'
@@ -59,7 +57,7 @@ import {
 } from 'recharts'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
-import type { DetalleReporte, EntryFormState, Productor, Reporte } from './types'
+import type { DetalleReporte, EntryFormState, Productor, Reporte, PerfilUsuario } from './types'
 import {
   actualizarEstadoProductor,
   estaActivo,
@@ -79,6 +77,11 @@ import {
 } from './services/auditoria'
 import { ReporteEmpaque } from './components/ReporteEmpaque'
 import { Logo } from './components/Logo'
+import { Avatar } from './components/Avatar'
+import { ImageUploadField } from './components/ImageUploadField'
+import { ModalPerfilUsuario } from './components/ModalPerfilUsuario'
+import { obtenerPerfilUsuario } from './services/perfilUsuario'
+import { subirImagenASupabase, eliminarImagenDeSupabase } from './services/imageManager'
 import {
   exportarReporteEmpaqueExcel,
   exportarReporteEmpaquePDF,
@@ -112,6 +115,7 @@ type FormProductor = {
   sector: string
   observaciones: string
   activo: boolean
+  foto_url: string | null
 }
 
 type FilaReporteGeneralSemanal = {
@@ -299,6 +303,7 @@ const normalizarProductor = (row: Record<string, unknown>): Productor => {
     sector: String(row.sector ?? '').trim() || null,
     observaciones: String(row.observaciones ?? '').trim() || null,
     activo: typeof row.activo === 'boolean' ? row.activo : true,
+    foto_url: typeof row.foto_url === 'string' && row.foto_url.trim() ? row.foto_url.trim() : null,
     created_at: String(row.created_at ?? new Date().toISOString()),
   }
 }
@@ -492,6 +497,7 @@ function PantallaLogin() {
 }
 
 function App() {
+  const queryClient = useQueryClient()
   const [sesion, setSesion] = useState<Session | null>(null)
   const [vista, setVista] = useState<Vista>('inicio')
   const [menuAbierto, setMenuAbierto] = useState(false)
@@ -540,6 +546,7 @@ function App() {
   const auditoriaTamPagina = 15
   const [auditoriaTablaDisponible, setAuditoriaTablaDisponible] = useState(true)
 
+  const [modalPerfilAbierto, setModalPerfilAbierto] = useState(false)
   const [modalProductorAbierto, setModalProductorAbierto] = useState(false)
   const [formProductor, setFormProductor] = useState<FormProductor>({
     id: null,
@@ -550,7 +557,10 @@ function App() {
     sector: '',
     observaciones: '',
     activo: true,
+    foto_url: null,
   })
+  const [formProductorBlob, setFormProductorBlob] = useState<Blob | null>(null)
+  const [formProductorFotoEliminada, setFormProductorFotoEliminada] = useState(false)
   const [menuProductorId, setMenuProductorId] = useState<string | null>(null)
   const [confirmacionEliminar, setConfirmacionEliminar] = useState<Productor | null>(null)
 
@@ -764,16 +774,27 @@ function App() {
     },
   })
 
+  const qPerfilUsuario = useQuery<PerfilUsuario | null>({
+    queryKey: ['perfil-usuario', sesion?.user.id],
+    enabled: !!sesion?.user.id,
+    queryFn: async () => {
+      if (!sesion?.user) return null
+      return obtenerPerfilUsuario(sesion.user.id, sesion.user.email ?? '', sesion.user.user_metadata)
+    },
+  })
+
   const registrarEvento = async (
     input: Omit<Parameters<typeof registrarEventoAuditoria>[0], 'usuarioId' | 'usuarioEmail' | 'usuarioNombre'>,
   ) => {
     if (!sesion) return
 
+    const nombreUsuarioActual = qPerfilUsuario.data?.nombre || formatearNombreUsuario(sesion.user.email ?? 'usuario@deeremax.app')
+
     await registrarEventoAuditoria({
       ...input,
       usuarioId: sesion.user.id,
       usuarioEmail: sesion.user.email ?? null,
-      usuarioNombre: formatearNombreUsuario(sesion.user.email ?? 'usuario@deeremax.app'),
+      usuarioNombre: nombreUsuarioActual,
     })
 
     if (vista === 'auditoria') {
@@ -1373,14 +1394,10 @@ function App() {
   const vistaCargando = qProductores.isLoading && !qProductores.data
   const metaVista = META_VISTA[vista]
   const usuarioEmail = sesion?.user?.email ?? 'usuario@deeremax.app'
-  const usuarioNombre = formatearNombreUsuario(usuarioEmail)
-  const rolUsuario = esAdmin ? 'Administrador' : 'Usuario operativo'
-  const inicialesUsuario = usuarioNombre
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((chunk) => chunk.charAt(0).toUpperCase())
-    .join('')
+  const usuarioNombre = qPerfilUsuario.data?.nombre || formatearNombreUsuario(usuarioEmail)
+  const usuarioCargo = qPerfilUsuario.data?.cargo || metaVista.cargo
+  const usuarioFoto = qPerfilUsuario.data?.foto_url || null
+  const rolUsuario = qPerfilUsuario.data?.rol || (esAdmin ? 'Administrador' : 'Usuario operativo')
 
   const onCambiarCaptura = (field: keyof EntryFormState, value: string) => {
     if (field === 'fecha' || field === 'observaciones') {
@@ -1453,7 +1470,10 @@ function App() {
       sector: '',
       observaciones: '',
       activo: true,
+      foto_url: null,
     })
+    setFormProductorBlob(null)
+    setFormProductorFotoEliminada(false)
   }
 
   const validarProductor = () => {
@@ -1473,6 +1493,25 @@ function App() {
 
     if (!validarProductor()) return
 
+    let finalFotoUrl = formProductor.foto_url
+
+    // Si se seleccionó una nueva foto/logo de productor, subir a Supabase Storage
+    if (formProductorBlob && formProductor.foto_url) {
+      const res = await subirImagenASupabase({
+        blob: formProductorBlob,
+        dataUrl: formProductor.foto_url,
+        carpeta: 'productores',
+        idEntidad: formProductor.id || `temp_${normalizarCodigo(formProductor.codigo)}`,
+      })
+      finalFotoUrl = res.url
+    } else if (formProductorFotoEliminada && formProductor.id) {
+      const previo = (qProductores.data ?? []).find((p) => p.id === formProductor.id)
+      if (previo?.foto_url) {
+        void eliminarImagenDeSupabase(previo.foto_url)
+      }
+      finalFotoUrl = null
+    }
+
     const { error } = await guardarProductor(formProductor.id, {
       codigo: normalizarCodigo(formProductor.codigo),
       nombre: formProductor.nombre.trim().toUpperCase(),
@@ -1481,6 +1520,7 @@ function App() {
       sector: formProductor.sector.trim(),
       observaciones: formProductor.observaciones.trim(),
       activo: formProductor.activo,
+      foto_url: finalFotoUrl,
     })
 
     if (error) {
@@ -1491,16 +1531,20 @@ function App() {
     await qProductores.refetch()
     const accion = formProductor.id ? 'PRODUCTOR_ACTUALIZADO' : 'PRODUCTOR_CREADO'
     const descripcion = formProductor.id
-      ? `Se actualizo el productor ${formProductor.nombre.trim().toUpperCase()}.`
-      : `Se creo el productor ${formProductor.nombre.trim().toUpperCase()}.`
+      ? `Se actualizó el productor ${formProductor.nombre.trim().toUpperCase()}${finalFotoUrl ? ' con logotipo/fotografía' : ''}.`
+      : `Se creó el productor ${formProductor.nombre.trim().toUpperCase()}${finalFotoUrl ? ' con logotipo/fotografía' : ''}.`
     await registrarEvento({
       tipo: formProductor.id ? 'update' : 'create',
       accion,
       descripcion,
       modulo: 'Productores',
-      metadata: { productorId: formProductor.id ?? null, codigo: normalizarCodigo(formProductor.codigo) },
+      metadata: {
+        productorId: formProductor.id ?? null,
+        codigo: normalizarCodigo(formProductor.codigo),
+        tieneFoto: Boolean(finalFotoUrl),
+      },
     })
-    notificarExito(formProductor.id ? 'Productor actualizado con exito.' : 'Productor creado con exito.')
+    notificarExito(formProductor.id ? 'Productor actualizado con éxito.' : 'Productor creado con éxito.')
     setModalProductorAbierto(false)
     resetFormProductor()
   }
@@ -1515,7 +1559,10 @@ function App() {
       sector: item.sector ?? '',
       observaciones: item.observaciones ?? '',
       activo: estaActivo(item),
+      foto_url: item.foto_url ?? null,
     })
+    setFormProductorBlob(null)
+    setFormProductorFotoEliminada(false)
     setModalProductorAbierto(true)
   }
 
@@ -1563,6 +1610,10 @@ function App() {
       return
     }
 
+    if (item.foto_url) {
+      void eliminarImagenDeSupabase(item.foto_url)
+    }
+
     const { error } = await supabase.from('productores').delete().eq('id', item.id)
     if (error) {
       logErrorSupabase('Eliminar productor', error)
@@ -1578,7 +1629,7 @@ function App() {
       modulo: 'Productores',
       metadata: { productorId: item.id },
     })
-    notificarExito('Productor eliminado correctamente.')
+    notificarExito('Productor eliminado con éxito.')
   }
 
   const abrirProductorDesdeFicha = (item: Productor) => {
@@ -2164,6 +2215,7 @@ function App() {
       decimals: 0,
       delta: dashboardData.comparativas.reportes,
       color: '#2563eb',
+      link: 'productores' as const,
     },
     {
       title: 'Reportes generados',
@@ -2173,6 +2225,7 @@ function App() {
       decimals: 0,
       delta: dashboardData.comparativas.reportes,
       color: '#15803d',
+      link: 'reportes' as const,
     },
     {
       title: 'Producción total',
@@ -2182,6 +2235,7 @@ function App() {
       decimals: 0,
       delta: dashboardData.comparativas.totalCajas,
       color: '#d97706',
+      link: 'reportes' as const,
     },
     {
       title: 'Rendimiento promedio',
@@ -2191,6 +2245,7 @@ function App() {
       decimals: 2,
       delta: dashboardData.comparativas.promedioRendimiento,
       color: '#15803d',
+      link: 'reportes' as const,
     },
     {
       title: 'Productor con mayor rendimiento',
@@ -2200,6 +2255,7 @@ function App() {
       decimals: 2,
       delta: null,
       color: '#d97706',
+      link: 'productores' as const,
     },
     {
       title: 'Productor con menor rendimiento',
@@ -2209,6 +2265,7 @@ function App() {
       decimals: 2,
       delta: null,
       color: '#dc2626',
+      link: 'productores' as const,
     },
     {
       title: 'Producción variedad Americana',
@@ -2218,6 +2275,7 @@ function App() {
       decimals: 0,
       delta: null,
       color: '#15803d',
+      link: 'reportes' as const,
     },
     {
       title: 'Producción variedad Hindú',
@@ -2227,6 +2285,7 @@ function App() {
       decimals: 0,
       delta: null,
       color: '#7c3aed',
+      link: 'reportes' as const,
     },
   ]
 
@@ -2274,11 +2333,29 @@ function App() {
         </div>
         <div className="acciones-topbar">
           <div className="perfil-topbar">
-            <div className="usuario-topbar-chip">
-              <UserCircle2 size={18} />
+            <div
+              className="usuario-topbar-chip"
+              onClick={() => setModalPerfilAbierto(true)}
+              title="Ver y editar mi perfil de usuario"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setModalPerfilAbierto(true)
+                }
+              }}
+            >
+              <Avatar
+                src={usuarioFoto}
+                name={usuarioNombre}
+                size="sm"
+                type="user"
+                border={true}
+              />
               <div>
                 <strong>{usuarioNombre}</strong>
-                <span>{metaVista.cargo}</span>
+                <span>{usuarioCargo}</span>
               </div>
             </div>
           </div>
@@ -2305,8 +2382,30 @@ function App() {
             <X size={16} />
           </button>
         </div>
-        <div className="menu-usuario-resumen">
-          <div className="menu-usuario-avatar" aria-hidden>{inicialesUsuario || 'US'}</div>
+        <div
+          className="menu-usuario-resumen"
+          onClick={() => {
+            setModalPerfilAbierto(true)
+            setMenuAbierto(false)
+          }}
+          title="Ver y editar mi perfil de usuario"
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setModalPerfilAbierto(true)
+              setMenuAbierto(false)
+            }
+          }}
+        >
+          <Avatar
+            src={usuarioFoto}
+            name={usuarioNombre}
+            size="md"
+            type="user"
+            border={true}
+          />
           <div className="menu-usuario-datos">
             <span>{usuarioNombre}</span>
             <small>{usuarioEmail}</small>
@@ -2393,22 +2492,30 @@ function App() {
                 return (
                   <motion.article
                     key={kpi.title}
-                    className="dashboard-kpi-card"
+                    className="dashboard-kpi-card dashboard-kpi-card--link"
                     initial={{ opacity: 0, y: 14 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: idx * 0.04 }}
                     whileHover={{ y: -4 }}
+                    onClick={() => setVista(kpi.link)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter') setVista(kpi.link) }}
+                    aria-label={`Ir a ${kpi.title}`}
                   >
                     <div className="mb-2 flex items-center justify-between">
                       <div className="rounded-xl p-2" style={{ backgroundColor: `${kpi.color}1f` }}>
                         <Icon size={18} color={kpi.color} />
                       </div>
-                      {typeof delta === 'number' ? (
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${delta >= 0 ? 'bg-[#e8f6ee] text-[#1B5E20]' : 'bg-[#fdeaea] text-[#b22b2b]'}`}>
-                          {delta >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                          {Math.abs(delta).toFixed(1)}%
-                        </span>
-                      ) : null}
+                      <div className="kpi-card-top-right">
+                        {typeof delta === 'number' ? (
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${delta >= 0 ? 'bg-[#e8f6ee] text-[#1B5E20]' : 'bg-[#fdeaea] text-[#b22b2b]'}`}>
+                            {delta >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                            {Math.abs(delta).toFixed(1)}%
+                          </span>
+                        ) : null}
+                        <span className="kpi-nav-arrow" style={{ color: kpi.color }}>→</span>
+                      </div>
                     </div>
                     <p className="dashboard-kpi-label">{kpi.title}</p>
                     <p className="dashboard-kpi-value"><AnimatedNumber value={kpi.value} decimals={kpi.decimals} /></p>
@@ -2628,9 +2735,18 @@ function App() {
                 return (
                   <article key={item.id} className="tarjeta-productor ficha-productor">
                     <div className="cabecera-tarjeta">
-                      <div className="avatar-badge">
-                        <UserRound size={16} />
-                        {(item.nombre || 'PR').slice(0, 2).toUpperCase()}
+                      <div className="avatar-badge-wrap flex items-center gap-2.5">
+                        <Avatar
+                          src={item.foto_url}
+                          name={item.nombre}
+                          size="md"
+                          variant="rounded"
+                          type="producer"
+                          border={true}
+                        />
+                        <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                          {item.codigo ?? 'N/A'}
+                        </span>
                       </div>
                       <div className="ficha-acciones-top" onClick={(e) => e.stopPropagation()}>
                         <span className={`estado-pill ${estaActivo(item) ? 'estado-bueno' : 'estado-bajo'}`}>
@@ -2700,11 +2816,21 @@ function App() {
         {vista === 'captura' ? (
           <section className="seccion-vista">
             <article className="encabezado-captura">
-              <div>
-                <h2>{productorActivo?.nombre ?? 'Productor'}</h2>
-                <p>
-                  Código: {productorActivo?.codigo ?? 'N/A'} | Semana actual: {getWeekRange(format(ahora, 'yyyy-MM-dd')).weekStart} al {getWeekRange(format(ahora, 'yyyy-MM-dd')).weekEnd}
-                </p>
+              <div className="encabezado-captura-info">
+                <Avatar
+                  src={productorActivo?.foto_url}
+                  name={productorActivo?.nombre ?? 'Productor'}
+                  size="lg"
+                  variant="rounded"
+                  type="producer"
+                  border={true}
+                />
+                <div>
+                  <h2>{productorActivo?.nombre ?? 'Productor'}</h2>
+                  <p>
+                    Código: {productorActivo?.codigo ?? 'N/A'} | Semana actual: {getWeekRange(format(ahora, 'yyyy-MM-dd')).weekStart} al {getWeekRange(format(ahora, 'yyyy-MM-dd')).weekEnd}
+                  </p>
+                </div>
               </div>
               <div className="acciones-linea">
                 <button className="ghost" onClick={() => setVista('productores')}>
@@ -3320,6 +3446,7 @@ function App() {
                 <table className="responsive-table">
                   <thead>
                     <tr>
+                      <th>Foto</th>
                       <th>Codigo</th>
                       <th>Nombre</th>
                       <th>Telefono</th>
@@ -3332,8 +3459,22 @@ function App() {
                   <tbody>
                     {productoresAdminVisibles.map((item) => (
                       <tr key={item.id}>
+                        <td data-label="Foto">
+                          <Avatar
+                            src={item.foto_url}
+                            name={item.nombre}
+                            size="sm"
+                            variant="rounded"
+                            type="producer"
+                            border={true}
+                          />
+                        </td>
                         <td data-label="Codigo">{item.codigo ?? 'N/A'}</td>
-                        <td data-label="Nombre">{item.nombre}</td>
+                        <td data-label="Nombre">
+                          <div className="celda-productor-tabla">
+                            <strong>{item.nombre}</strong>
+                          </div>
+                        </td>
                         <td data-label="Telefono">{item.telefono ?? 'N/A'}</td>
                         <td data-label="N° Cuenta Bancaria">{item.finca ?? 'N/A'}</td>
                         <td data-label="Sector">{item.sector ?? 'N/A'}</td>
@@ -3376,6 +3517,21 @@ function App() {
               </button>
             </div>
             <form className="modal-form" onSubmit={guardarFormularioProductor}>
+              <ImageUploadField
+                label="Logotipo / Fotografía del Productor"
+                value={formProductor.foto_url}
+                nombreReferencia={formProductor.nombre}
+                tipo="producer"
+                onChange={(data) => {
+                  setFormProductor((prev) => ({ ...prev, foto_url: data.url }))
+                  setFormProductorBlob(data.blob || null)
+                  if (!data.url) setFormProductorFotoEliminada(true)
+                  else setFormProductorFotoEliminada(false)
+                }}
+                onError={notificarError}
+                helpText="Logotipo de la finca o proveedor (PNG, JPG, WebP máx. 5MB)"
+              />
+
               <label>
                 Codigo
                 <input
@@ -3479,6 +3635,37 @@ function App() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {sesion && modalPerfilAbierto ? (
+        <ModalPerfilUsuario
+          abierto={modalPerfilAbierto}
+          onCerrar={() => setModalPerfilAbierto(false)}
+          perfilActual={
+            qPerfilUsuario.data ?? {
+              id: sesion.user.id,
+              email: sesion.user.email ?? '',
+              nombre: usuarioNombre,
+              telefono: null,
+              cargo: usuarioCargo,
+              rol: rolUsuario,
+              foto_url: usuarioFoto,
+            }
+          }
+          onPerfilActualizado={(nuevoPerfil) => {
+            queryClient.setQueryData(['perfil-usuario', sesion.user.id], nuevoPerfil)
+          }}
+          onNotificarExito={notificarExito}
+          onNotificarError={notificarError}
+          onRegistrarAuditoria={async (accion, descripcion) => {
+            await registrarEvento({
+              tipo: 'user',
+              accion,
+              descripcion,
+              modulo: 'Usuarios',
+            })
+          }}
+        />
       ) : null}
 
       {toast ? (

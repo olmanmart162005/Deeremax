@@ -7,7 +7,27 @@ export type Productor = {
   sector?: string | null
   observaciones?: string | null
   activo?: boolean | null
+  foto_url?: string | null
   created_at: string
+}
+
+export type PerfilUsuario = {
+  id: string
+  email: string
+  nombre: string
+  telefono?: string | null
+  cargo?: string | null
+  rol?: string | null
+  foto_url?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export type FormPerfilUsuario = {
+  nombre: string
+  telefono: string
+  cargo: string
+  foto_url: string | null
 }
 
 export type DetalleReporte = {
