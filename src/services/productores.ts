@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase'
-import type { Productor } from '../types'
+import type { Productor, RolUsuario } from '../types'
+import { validarPermisoEscritura } from './permisos'
 
 export type PayloadProductor = {
   codigo: string
@@ -19,7 +20,14 @@ export const estaActivo = (productor: Productor) => {
   return true
 }
 
-export const guardarProductor = async (productorId: string | null, payload: PayloadProductor) => {
+export const guardarProductor = async (
+  productorId: string | null,
+  payload: PayloadProductor,
+  rolSolicitante: RolUsuario = 'Operador',
+) => {
+  // Validación estricta: Juan Carlos (Supervisor) no puede guardar ni modificar productores
+  validarPermisoEscritura(rolSolicitante, productorId ? 'editar este productor' : 'crear nuevos productores')
+
   const nombre = normalizarNombreProductor(payload.nombre)
 
   const basePayload: Record<string, unknown> = {
@@ -45,7 +53,14 @@ export const guardarProductor = async (productorId: string | null, payload: Payl
   return { error }
 }
 
-export const actualizarEstadoProductor = async (productor: Productor, activo: boolean) => {
+export const actualizarEstadoProductor = async (
+  productor: Productor,
+  activo: boolean,
+  rolSolicitante: RolUsuario = 'Operador',
+) => {
+  // Validación estricta: Juan Carlos (Supervisor) no puede cambiar el estado de productores
+  validarPermisoEscritura(rolSolicitante, 'cambiar el estado del productor')
+
   const { error } = await supabase
     .from('productores')
     .update({ activo })

@@ -59,6 +59,25 @@ const SIZES_PX: Record<AvatarSize, { px: number; font: number; icon: number }> =
   '3xl': { px: 116, font: 34, icon: 50 },
 }
 
+const esUrlInvalidaOExpirada = (url?: string | null): boolean => {
+  if (!url || !url.trim()) return true
+  if (url.includes('fbcdn.net')) {
+    try {
+      const urlObj = new URL(url)
+      const oe = urlObj.searchParams.get('oe')
+      if (oe) {
+        const exp = parseInt(oe, 16)
+        if (Math.floor(Date.now() / 1000) > exp) {
+          return true
+        }
+      }
+    } catch {
+      return true
+    }
+  }
+  return false
+}
+
 export const Avatar: React.FC<AvatarProps> = ({
   src,
   name = '',
@@ -91,7 +110,7 @@ export const Avatar: React.FC<AvatarProps> = ({
   const radioClase =
     variant === 'circle' ? 'rounded-full' : variant === 'rounded' ? 'rounded-2xl' : 'rounded-lg'
 
-  const tieneFotoValida = Boolean(src && !fallo)
+  const tieneFotoValida = Boolean(src && !fallo && !esUrlInvalidaOExpirada(src))
 
   return (
     <div

@@ -59,20 +59,33 @@ export const normalizarEventoAuditoria = (row: Record<string, unknown>): EventoA
 }
 
 export const registrarEventoAuditoria = async (payload: EventoAuditoriaPayload) => {
-  const { error } = await supabase.from('auditoria_eventos').insert({
-    tipo: payload.tipo,
-    accion: payload.accion,
-    descripcion: payload.descripcion,
-    modulo: payload.modulo,
-    usuario_id: payload.usuarioId ?? null,
-    usuario_email: payload.usuarioEmail ?? null,
-    usuario_nombre: payload.usuarioNombre ?? null,
-    metadata: payload.metadata ?? null,
-  })
+  try {
+    const { data: sessionData } = await supabase.auth.getSession()
+    // Si no hay sesión autenticada activa (ej. usuario deslogueado o en pantalla de login),
+    // no enviar la mutación para no disparar 401 / 42501 de RLS en consola
+    if (!sessionData?.session) {
+      return { error: null }
+    }
 
-  if (error) {
-    console.error('[Supabase] Registrar evento auditoria', error)
+    const { error } = await supabase.from('auditoria_eventos').insert({
+      tipo: payload.tipo,
+      accion: payload.accion,
+      descripcion: payload.descripcion,
+      modulo: payload.modulo,
+      usuario_id: payload.usuarioId ?? sessionData.session.user.id ?? null,
+      usuario_email: payload.usuarioEmail ?? sessionData.session.user.email ?? null,
+      usuario_nombre: payload.usuarioNombre ?? null,
+      metadata: payload.metadata ?? null,
+    })
+
+    if (error) {
+      if (error.code !== '42501' && !error.message?.includes('violates row-level security')) {
+        console.warn('[Supabase] Auditoria info:', error.message)
+      }
+    }
+
+    return { error }
+  } catch {
+    return { error: null }
   }
-
-  return { error }
 }

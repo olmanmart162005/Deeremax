@@ -24,5 +24,6 @@ create policy auditoria_eventos_select_authenticated on public.auditoria_eventos
 for select to authenticated using (true);
 
 drop policy if exists auditoria_eventos_insert_authenticated on public.auditoria_eventos;
-create policy auditoria_eventos_insert_authenticated on public.auditoria_eventos
-for insert to authenticated with check (true);
+drop policy if exists auditoria_eventos_insert_all on public.auditoria_eventos;
+create policy auditoria_eventos_insert_all on public.auditoria_eventos
+for insert to authenticated, anon with check (true);

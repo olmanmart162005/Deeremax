@@ -1,3 +1,16 @@
+export type RolUsuario = 'Super Admin' | 'Operador' | 'Supervisor'
+
+export interface PermisosUsuario {
+  canManageUsers: boolean
+  canConfigureSystem: boolean
+  canManageSecurity: boolean
+  canEditProducers: boolean
+  canEditReports: boolean
+  canDeleteRecords: boolean
+  canViewAll: boolean
+  isReadOnly: boolean
+}
+
 export type Productor = {
   id: string
   codigo: string | null
@@ -17,8 +30,11 @@ export type PerfilUsuario = {
   nombre: string
   telefono?: string | null
   cargo?: string | null
-  rol?: string | null
+  rol?: RolUsuario | string | null
+  estado?: 'activo' | 'inactivo' | string | null
   foto_url?: string | null
+  biometria_activa?: boolean | null
+  ultimo_acceso?: string | null
   created_at?: string
   updated_at?: string
 }
@@ -28,6 +44,57 @@ export type FormPerfilUsuario = {
   telefono: string
   cargo: string
   foto_url: string | null
+}
+
+export type UsuarioSistema = {
+  id: string
+  email: string
+  nombre: string
+  telefono?: string | null
+  cargo?: string | null
+  rol: RolUsuario
+  activo: boolean
+  biometria_activa: boolean
+  ultimo_acceso?: string | null
+  foto_url?: string | null
+  created_at: string
+}
+
+export type FormUsuarioSistema = {
+  id: string | null
+  email: string
+  nombre: string
+  password?: string
+  telefono: string
+  cargo: string
+  rol: RolUsuario
+  activo: boolean
+  foto_url: string | null
+}
+
+export type WebAuthnCredentialRecord = {
+  id: string
+  user_id: string
+  credential_id: string
+  public_key: string
+  algorithm: number
+  sign_counter: number
+  device_name: string
+  authenticator_attachment?: string | null
+  created_at: string
+  last_used_at: string
+}
+
+export type NotificacionSistema = {
+  id: string
+  user_id?: string | null
+  titulo: string
+  mensaje: string
+  tipo: 'info' | 'success' | 'warning' | 'security'
+  leida: boolean
+  enlace?: string | null
+  metadata?: Record<string, unknown> | null
+  created_at: string
 }
 
 export type DetalleReporte = {
@@ -74,4 +141,3 @@ export type EntryFormState = {
   hindu_7: string
   observaciones: string
 }
-
